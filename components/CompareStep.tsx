@@ -2,8 +2,34 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { call, download } from "@/lib/engine-client";
 import type { CompareMeta, StatusFilter } from "@/lib/engine.worker";
-import type { Cell } from "@/lib/types";
+import type { Cell, RunInfo, SideInfo } from "@/lib/types";
 import { Alert, ColumnPicker, Spinner, fmtCell } from "./ui";
+
+export interface CompareSel {
+  keys?: string[];
+  fields?: string[];
+}
+
+function SideCard({ label, side }: { label: string; side: SideInfo }) {
+  const shown = side.files.slice(0, 6);
+  return (
+    <div className="info-card">
+      <div className="row">
+        <span className="badge info">ฝั่ง {label}</span>
+        <strong>{side.system}</strong>
+        <span className="spacer" />
+        <span className="muted">{side.rowCount.toLocaleString()} แถวดิบ</span>
+      </div>
+      <ul className="files">
+        {shown.map((f) => (
+          <li key={f}>{f}</li>
+        ))}
+        {side.files.length > shown.length && <li className="muted">…และอีก {side.files.length - shown.length} ไฟล์</li>}
+        {side.files.length === 0 && <li className="muted">-</li>}
+      </ul>
+    </div>
+  );
+}
 
 const PAGE = 100;
 const FILTERS: StatusFilter[] = ["All", "Match", "Mismatch", "Missing A", "Missing B"];
@@ -143,6 +169,11 @@ export function CompareStep(props: {
   meta: CompareMeta | null;
   onMeta: (m: CompareMeta | null) => void;
   onBack: () => void;
+  runInfo: { mappingName: string | null; a: SideInfo; b: SideInfo };
+  /** Key / Compare Fields ที่โหลดมากับ Mapping (selVersion เปลี่ยน = โหลดใหม่) */
+  sel: CompareSel;
+  selVersion: number;
+  onSel: (s: CompareSel) => void;
 }) {
   const common = useMemo(() => props.stdColsA.filter((c) => props.stdColsB.includes(c)), [props.stdColsA, props.stdColsB]);
   const [keys, setKeys] = useState<string[]>([]);
@@ -152,16 +183,29 @@ export function CompareStep(props: {
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // ค่าเริ่มต้น: Key = SKU+Location, Compare Fields = ตามชุดสูตร (หรือทุกฟิลด์ร่วม)
+  // ค่าเริ่มต้น: Key/Fields จาก Mapping ที่โหลดมา ไม่ก็ Key = SKU+Location และ Fields = ตามชุดสูตร (หรือทุกฟิลด์ร่วม)
   useEffect(() => {
-    const k = ["SKU", "Location"].filter((x) => common.includes(x));
-    const kk = k.length ? k : common.slice(0, 1);
+    const wantKeys = props.sel.keys?.filter((k) => common.includes(k));
+    const dk = ["SKU", "Location"].filter((x) => common.includes(x));
+    const kk = wantKeys && wantKeys.length ? wantKeys : dk.length ? dk : common.slice(0, 1);
     setKeys(kk);
     const rest = common.filter((c) => !kk.includes(c));
+    const wantFields = props.sel.fields?.filter((f) => rest.includes(f));
     const pref = props.defaultFields?.filter((f) => rest.includes(f));
-    setFields(pref && pref.length ? pref : rest);
+    setFields(wantFields && wantFields.length ? wantFields : pref && pref.length ? pref : rest);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [common.join("|"), (props.defaultFields ?? []).join("|")]);
+  }, [common.join("|"), (props.defaultFields ?? []).join("|"), props.selVersion]);
+
+  const changeKeys = (v: string[]) => {
+    const f = fields.filter((x) => !v.includes(x));
+    setKeys(v);
+    setFields(f);
+    props.onSel({ keys: v, fields: f });
+  };
+  const changeFields = (v: string[]) => {
+    setFields(v);
+    props.onSel({ keys, fields: v });
+  };
 
   const run = useCallback(async () => {
     setError(null);
@@ -171,6 +215,12 @@ export function CompareStep(props: {
         keys,
         fields: fields.filter((f) => !keys.includes(f)),
         opts: { fuzzyKeys: fuzzy, tolerance: Math.abs(Number(tol) || 0), tagA: props.tagA, tagB: props.tagB },
+        info: {
+          ...props.runInfo,
+          generatedAt: new Date().toISOString(),
+          tolerance: Math.abs(Number(tol) || 0),
+          fuzzyKeys: fuzzy,
+        } satisfies RunInfo,
       });
       props.onMeta(m);
     } catch (e) {
@@ -192,18 +242,18 @@ export function CompareStep(props: {
         <div className="grid2">
           <div>
             <div className="card-label">⚙️ Key Columns (Join Keys)</div>
-            <ColumnPicker options={common} value={keys} onChange={(v) => { setKeys(v); setFields((f) => f.filter((x) => !v.includes(x))); }} />
+            <ColumnPicker options={common} value={keys} onChange={changeKeys} />
           </div>
           <div>
             <div className="card-label">📋 Compare Fields</div>
-            <ColumnPicker options={common.filter((c) => !keys.includes(c))} value={fields} onChange={setFields} />
+            <ColumnPicker options={common.filter((c) => !keys.includes(c))} value={fields} onChange={changeFields} />
           </div>
         </div>
         <hr className="s" />
         <div className="row">
-          <label className="row" style={{ gap: 6 }} title="ตัดช่องว่างหัวท้ายและไม่สนตัวพิมพ์เล็ก/ใหญ่ตอนจับคู่ Key (ปกติเทียบตรงตามตัวอักษร)">
+          <label className="row" style={{ gap: 6 }} title="ตัดช่องว่างหัวท้ายและไม่สนตัวพิมพ์เล็ก/ใหญ่ตอนจับคู่ Key และเทียบฟิลด์ข้อความ (ปกติเทียบตรงตามตัวอักษร)">
             <input type="checkbox" checked={fuzzy} onChange={(e) => setFuzzy(e.target.checked)} />
-            จับคู่ Key แบบหลวม (ตัดช่องว่าง / ไม่สนตัวพิมพ์)
+            จับคู่แบบหลวม (ตัดช่องว่าง / ไม่สนตัวพิมพ์ — ใช้กับ Key และฟิลด์ข้อความ)
           </label>
           <label className="row" style={{ gap: 6 }} title="ผลต่างตัวเลขไม่เกินค่านี้ถือว่าตรงกัน">
             ยอมให้ต่างได้ไม่เกิน
@@ -222,6 +272,16 @@ export function CompareStep(props: {
 
       {m && (
         <>
+          <div className="card-label">🗂️ ข้อมูลที่ใช้เทียบ</div>
+          <div className="grid2" style={{ marginBottom: 12 }}>
+            <SideCard label="A" side={m.info?.a ?? props.runInfo.a} />
+            <SideCard label="B" side={m.info?.b ?? props.runInfo.b} />
+          </div>
+          <div className="muted" style={{ marginBottom: 12 }}>
+            Mapping: <strong>{m.info?.mappingName ?? "-"}</strong> · Key: {m.keys.join(", ")} · เทียบ: {m.fields.map((f) => f.name).join(", ") || "-"}
+            {m.info && m.info.tolerance > 0 ? ` · ยอมให้ต่างได้ ≤ ${m.info.tolerance}` : ""}
+            {m.info?.fuzzyKeys ? " · จับคู่แบบหลวม" : ""}
+          </div>
           {m.notes.length > 0 && (
             <Alert kind="warn">
               <ul>
@@ -270,11 +330,14 @@ export function CompareStep(props: {
                 {m.summary.perField.map((f) => (
                   <div className="kpi" key={f.name}>
                     <div className="kpi-v" style={{ fontSize: 22 }}>
-                      {f.totalAbsDiff.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                      {f.isDate ? " วัน" : ""}
+                      {f.kind === "text"
+                        ? f.rowsDiff.toLocaleString()
+                        : f.totalAbsDiff.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                      {f.kind === "date" ? " วัน" : f.kind === "text" ? " แถว" : ""}
                     </div>
                     <div className="kpi-l">
-                      {f.name} · {f.rowsDiff.toLocaleString()} แถวต่าง
+                      {f.name}
+                      {f.kind === "text" ? " (ข้อความ)" : ` · ${f.rowsDiff.toLocaleString()} แถวต่าง`}
                     </div>
                   </div>
                 ))}

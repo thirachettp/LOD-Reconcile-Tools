@@ -104,12 +104,32 @@ export const SYSTEM_LABELS: Record<SystemCode, string> = {
 
 export type Status = "Match" | "Mismatch" | "Missing A" | "Missing B";
 
+export type FieldKind = "number" | "date" | "text";
+
 export interface FieldMeta {
   name: string;
+  kind: FieldKind;
   isDate: boolean;
   colA: string;
   colB: string;
-  colDiff: string;
+  /** ฟิลด์ข้อความไม่มีคอลัมน์ Diff */
+  colDiff: string | null;
+}
+
+/** ข้อมูลของแต่ละฝั่งที่ใช้เทียบ — แสดงใน Dashboard และ Summary ของ Excel */
+export interface SideInfo {
+  system: string;
+  files: string[];
+  rowCount: number;
+}
+
+export interface RunInfo {
+  mappingName: string | null;
+  a: SideInfo;
+  b: SideInfo;
+  generatedAt: string;
+  tolerance: number;
+  fuzzyKeys: boolean;
 }
 
 export interface CompareSummary {
@@ -121,7 +141,7 @@ export interface CompareSummary {
   /** key ซ้ำที่ถูกรวมยอด (จำนวนแถวที่เกินมา) */
   duplicateKeysA: number;
   duplicateKeysB: number;
-  perField: { name: string; isDate: boolean; totalAbsDiff: number; rowsDiff: number }[];
+  perField: { name: string; isDate: boolean; kind: FieldKind; totalAbsDiff: number; rowsDiff: number }[];
 }
 
 export interface CompareResult {
@@ -133,6 +153,7 @@ export interface CompareResult {
   mismatchedCol: number;
   summary: CompareSummary;
   notes: string[];
+  info: RunInfo | null;
 }
 
 export interface CompareOptions {

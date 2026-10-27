@@ -4,6 +4,7 @@ import type {
   CompareOptions,
   CompareResult,
   CompareSummary,
+  FieldKind,
   FieldMeta,
   Status,
   Table,
@@ -13,6 +14,7 @@ interface Group {
   keyDisplay: Cell[];
   nums: (number | null)[];
   days: (number | null)[];
+  texts: (string | null)[];
 }
 
 const SEP = "\u0001";
@@ -23,7 +25,7 @@ function normKey(v: Cell, isDate: boolean, fuzzy: boolean): string {
     return d === null ? "" : dayToIso(d);
   }
   if (isMissing(v)) return "";
-  let s = v instanceof Date ? v.toISOString() : typeof v === "number" ? String(v) : String(v);
+  let s = v instanceof Date ? v.toISOString() : String(v);
   if (typeof v === "string" && !fuzzy) return v; // เทียบตรงตามที่ได้รับ ไม่ trim
   if (fuzzy) s = s.trim().toLowerCase();
   return s;
@@ -31,6 +33,20 @@ function normKey(v: Cell, isDate: boolean, fuzzy: boolean): string {
 
 function colValues(t: Table, idx: number): Cell[] {
   return idx < 0 ? [] : t.rows.map((r) => r[idx]);
+}
+
+/** ชนิดของฟิลด์ตัดสินจากข้อมูลสองฝั่งรวมกัน: วันที่ / ตัวเลข / ข้อความ */
+function detectKind(vals: Cell[]): FieldKind {
+  if (isDateLike(vals)) return "date";
+  let present = 0;
+  let numeric = 0;
+  for (const v of vals) {
+    if (isMissing(v)) continue;
+    present++;
+    if (toNumber(v) !== null) numeric++;
+  }
+  if (present === 0) return "number";
+  return numeric / present >= 0.8 ? "number" : "text";
 }
 
 interface Aggregated {
@@ -43,7 +59,7 @@ function aggregate(
   keyIdx: number[],
   keyIsDate: boolean[],
   fieldIdx: number[],
-  fieldIsDate: boolean[],
+  kinds: FieldKind[],
   fuzzy: boolean,
 ): Aggregated {
   const map = new Map<string, Group>();
@@ -62,6 +78,7 @@ function aggregate(
         }),
         nums: fieldIdx.map(() => null),
         days: fieldIdx.map(() => null),
+        texts: fieldIdx.map(() => null),
       };
       map.set(key, g);
     } else {
@@ -69,9 +86,11 @@ function aggregate(
     }
     fieldIdx.forEach((ix, f) => {
       const v = ix < 0 ? null : row[ix];
-      if (fieldIsDate[f]) {
+      if (kinds[f] === "date") {
         const d = parseDay(v, "dmy");
         if (d !== null && (g!.days[f] === null || d < (g!.days[f] as number))) g!.days[f] = d;
+      } else if (kinds[f] === "text") {
+        if (g!.texts[f] === null && !isMissing(v)) g!.texts[f] = v instanceof Date ? v.toISOString().slice(0, 10) : String(v);
       } else {
         const n = toNumber(v);
         if (n !== null) g!.nums[f] = (g!.nums[f] ?? 0) + n;
@@ -106,18 +125,19 @@ export function compareTables(
   const fA = fields.map((f) => stdA.columns.indexOf(f));
   const fB = fields.map((f) => stdB.columns.indexOf(f));
 
-  // ชนิดของ field/key ตัดสินจากข้อมูลสองฝั่งรวมกัน
-  const fieldIsDate = fields.map((_, i) =>
-    isDateLike([...colValues(stdA, fA[i]), ...colValues(stdB, fB[i])]),
-  );
+  const kinds = fields.map((_, i) => detectKind([...colValues(stdA, fA[i]), ...colValues(stdB, fB[i])]));
   const keyIsDate = common.map((_, i) =>
     isDateLike([...colValues(stdA, kA[i]), ...colValues(stdB, kB[i])]),
   );
 
-  const A = aggregate(stdA, kA, keyIsDate, fA, fieldIsDate, opts.fuzzyKeys);
-  const B = aggregate(stdB, kB, keyIsDate, fB, fieldIsDate, opts.fuzzyKeys);
+  const A = aggregate(stdA, kA, keyIsDate, fA, kinds, opts.fuzzyKeys);
+  const B = aggregate(stdB, kB, keyIsDate, fB, kinds, opts.fuzzyKeys);
   if (A.duplicates > 0) notes.push(`ฝั่ง A มี Key ซ้ำ ${A.duplicates.toLocaleString()} แถว — ถูกรวมยอดเข้าด้วยกัน`);
   if (B.duplicates > 0) notes.push(`ฝั่ง B มี Key ซ้ำ ${B.duplicates.toLocaleString()} แถว — ถูกรวมยอดเข้าด้วยกัน`);
+  const textFields = fields.filter((_, i) => kinds[i] === "text");
+  if (textFields.length) {
+    notes.push(`ฟิลด์ข้อความ (${textFields.join(", ")}) เทียบแบบตรงตัวอักษร ใช้ค่าแรกที่ไม่ว่างของ Key นั้น`);
+  }
 
   const allKeys = Array.from(new Set([...A.map.keys(), ...B.map.keys()])).sort((x, y) =>
     x.localeCompare(y, undefined, { numeric: true }),
@@ -125,14 +145,18 @@ export function compareTables(
 
   const meta: FieldMeta[] = fields.map((f, i) => ({
     name: f,
-    isDate: fieldIsDate[i],
+    kind: kinds[i],
+    isDate: kinds[i] === "date",
     colA: `${f}_${opts.tagA}`,
     colB: `${f}_${opts.tagB}`,
-    colDiff: `${f}_Diff`,
+    colDiff: kinds[i] === "text" ? null : `${f}_Diff`,
   }));
 
   const columns: string[] = [...common];
-  for (const m of meta) columns.push(m.colA, m.colB, m.colDiff);
+  for (const m of meta) {
+    columns.push(m.colA, m.colB);
+    if (m.colDiff) columns.push(m.colDiff);
+  }
   columns.push("Status", "Mismatched Fields");
   const statusCol = columns.length - 2;
   const mismatchedCol = columns.length - 1;
@@ -146,10 +170,15 @@ export function compareTables(
     missingB: 0,
     duplicateKeysA: A.duplicates,
     duplicateKeysB: B.duplicates,
-    perField: meta.map((m) => ({ name: m.name, isDate: m.isDate, totalAbsDiff: 0, rowsDiff: 0 })),
+    perField: meta.map((m) => ({ name: m.name, isDate: m.isDate, kind: m.kind, totalAbsDiff: 0, rowsDiff: 0 })),
   };
 
   const tol = Math.abs(opts.tolerance || 0);
+  const normText = (s: string | null) => {
+    if (s === null) return "";
+    const t = s.trim();
+    return opts.fuzzyKeys ? t.toLowerCase() : t;
+  };
 
   allKeys.forEach((key, r) => {
     const ga = A.map.get(key);
@@ -158,11 +187,22 @@ export function compareTables(
     const mismatched: string[] = [];
 
     meta.forEach((m, i) => {
+      if (m.kind === "text") {
+        const ta = ga ? ga.texts[i] : null;
+        const tb = gb ? gb.texts[i] : null;
+        row.push(ta, tb);
+        if (ga && gb && normText(ta) !== normText(tb)) {
+          mismatched.push(m.name);
+          summary.perField[i].rowsDiff++;
+        }
+        return;
+      }
+
       let va: Cell = null;
       let vb: Cell = null;
       let diff: number | null = null;
       let bad = false;
-      if (m.isDate) {
+      if (m.kind === "date") {
         const da = ga ? ga.days[i] : null;
         const db = gb ? gb.days[i] : null;
         va = formatDay(da);
@@ -182,13 +222,8 @@ export function compareTables(
         bad = Math.abs(diff) > tol;
       }
       row.push(va, vb, diff);
-      if (ga && gb) {
-        if (bad) mismatched.push(m.name);
-        if (diff !== null && diff !== 0) {
-          summary.perField[i].totalAbsDiff += Math.abs(diff);
-          summary.perField[i].rowsDiff++;
-        }
-      } else if (diff !== null && diff !== 0) {
+      if (ga && gb && bad) mismatched.push(m.name);
+      if (diff !== null && diff !== 0) {
         summary.perField[i].totalAbsDiff += Math.abs(diff);
         summary.perField[i].rowsDiff++;
       }
@@ -212,5 +247,5 @@ export function compareTables(
     rows[r] = row;
   });
 
-  return { columns, rows, keys: common, fields: meta, statusCol, mismatchedCol, summary, notes };
+  return { columns, rows, keys: common, fields: meta, statusCol, mismatchedCol, summary, notes, info: null };
 }

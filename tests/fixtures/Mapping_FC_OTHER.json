@@ -1,0 +1,99 @@
+{
+  "sys_a": "FC",
+  "sys_b": "OTHER",
+  "formulas": [
+    {
+      "target": "SKU",
+      "a": {
+        "function": "FIRST",
+        "columns": [
+          "sku_id",
+          "IBC"
+        ]
+      },
+      "b": {
+        "function": "FIRST",
+        "columns": [
+          "ITEM_NO"
+        ]
+      }
+    },
+    {
+      "target": "Location",
+      "a": {
+        "function": "FIRST",
+        "columns": [
+          "location_id",
+          "Location ID\n"
+        ]
+      },
+      "b": {
+        "function": "FIRST",
+        "columns": [
+          "Location_Id"
+        ]
+      }
+    },
+    {
+      "target": "LPN",
+      "a": {
+        "function": "FIRST",
+        "columns": [
+          "exp_date",
+          "LPN No.\n"
+        ]
+      },
+      "b": {
+        "function": "FIRST",
+        "columns": [
+          "LPN_NO"
+        ]
+      }
+    },
+    {
+      "target": "Lock Code",
+      "a": {
+        "function": "FIRST",
+        "columns": [
+          "Lock Code"
+        ]
+      },
+      "b": {
+        "function": "FIRST",
+        "columns": [
+          "Lockcode"
+        ]
+      }
+    },
+    {
+      "target": "Qty_total",
+      "a": {
+        "function": "SUM",
+        "columns": [
+          "Stock on Hand"
+        ]
+      },
+      "b": {
+        "function": "SUM",
+        "columns": [
+          "Qty"
+        ]
+      }
+    },
+    {
+      "target": "Receiving date",
+      "a": {
+        "function": "FIRST",
+        "columns": [
+          "Receiving date"
+        ]
+      },
+      "b": {
+        "function": "FIRST",
+        "columns": [
+          "GR_Date"
+        ]
+      }
+    }
+  ]
+}

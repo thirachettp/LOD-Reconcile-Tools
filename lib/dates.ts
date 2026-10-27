@@ -45,9 +45,7 @@ export function parseDay(v: Cell, order: DateOrder = "dmy"): number | null {
   if (isMissing(v)) return null;
   if (v instanceof Date) {
     if (Number.isNaN(v.getTime())) return null;
-    // SheetJS ให้ Date ที่ local time ตรงกับค่าใน Excel (อาจเพี้ยนระดับวินาที) → ขยับ +12 ชม. แล้วอ่าน local
-    const adj = new Date(v.getTime() + 12 * 3_600_000);
-    return toDay(adj.getFullYear(), adj.getMonth() + 1, adj.getDate());
+    return toDay(v.getFullYear(), v.getMonth() + 1, v.getDate());
   }
   if (typeof v !== "string") return null;
   const s = v.trim();

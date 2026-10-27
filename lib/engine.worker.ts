@@ -11,6 +11,7 @@ import type {
   CompareSummary,
   FieldMeta,
   MappingRow,
+  RunInfo,
   Table,
 } from "./types";
 
@@ -52,6 +53,7 @@ export interface CompareMeta {
   mismatchedCol: number;
   summary: CompareSummary;
   notes: string[];
+  info: RunInfo | null;
 }
 
 function filteredRows(q: Omit<PageQuery, "offset" | "limit">): Cell[][] {
@@ -126,9 +128,10 @@ const handlers = {
     state.result = null;
     return { a: meta(a.table, 50), b: meta(b.table, 50), warnings: [...a.warnings, ...b.warnings] };
   },
-  async compare(p: { keys: string[]; fields: string[]; opts: CompareOptions }): Promise<CompareMeta> {
+  async compare(p: { keys: string[]; fields: string[]; opts: CompareOptions; info: RunInfo }): Promise<CompareMeta> {
     if (!state.std.a || !state.std.b) throw new Error("กรุณา Build Standard Tables ก่อน");
     const res = compareTables(state.std.a, state.std.b, p.keys, p.fields, p.opts);
+    res.info = p.info;
     state.result = res;
     return {
       columns: res.columns,
@@ -138,6 +141,7 @@ const handlers = {
       mismatchedCol: res.mismatchedCol,
       summary: res.summary,
       notes: res.notes,
+      info: res.info,
     };
   },
   async page(q: PageQuery) {

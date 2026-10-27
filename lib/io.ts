@@ -35,7 +35,7 @@ const cache = new Map<string, Parsed>();
 
 export function loadFile(id: string, name: string, size: number, buf: ArrayBuffer): FileInfo {
   if (isExcelName(name)) {
-    const wb = XLSX.read(new Uint8Array(buf), { type: "array", cellDates: true });
+    const wb = XLSX.read(new Uint8Array(buf), { type: "array", cellNF: true });
     cache.set(id, { kind: "xlsx", wb });
     return { id, name, size, isExcel: true, sheets: wb.SheetNames };
   }
@@ -48,6 +48,57 @@ export function loadFile(id: string, name: string, size: number, buf: ArrayBuffe
 
 export function dropFile(id: string) {
   cache.delete(id);
+}
+
+const p2 = (n: number) => String(n).padStart(2, "0");
+
+/**
+ * แปลงเซลล์ Excel เป็นค่า — วันที่อ่านจากเลข serial + รูปแบบเซลล์โดยตรง (ไม่ผ่าน Date)
+ * จึงไม่คลาดเคลื่อนตาม timezone ของเบราว์เซอร์ (SheetJS cellDates อาจถอยวัน/เพี้ยนเป็นนาทีได้)
+ * ผลลัพธ์: "YYYY-MM-DD" หรือ "YYYY-MM-DD HH:mm[:ss]" ถ้ามีเวลา
+ */
+function cellValue(cell: XLSX.CellObject): Cell {
+  switch (cell.t) {
+    case "n": {
+      const v = cell.v as number;
+      if (typeof cell.z === "string" && XLSX.SSF.is_date(cell.z) && Number.isFinite(v)) {
+        const d = XLSX.SSF.parse_date_code(v);
+        if (d) {
+          const time = d.S ? `${p2(d.H)}:${p2(d.M)}:${p2(Math.floor(d.S))}` : `${p2(d.H)}:${p2(d.M)}`;
+          if (v >= 0 && v < 1) return time; // เซลล์เก็บเฉพาะเวลา
+          const date = `${d.y}-${p2(d.m)}-${p2(d.d)}`;
+          return d.H || d.M || d.S ? `${date} ${time}` : date;
+        }
+      }
+      return v;
+    }
+    case "s":
+      return (cell.v as string) ?? null;
+    case "b":
+      return cell.v as boolean;
+    case "d":
+      return cell.v instanceof Date ? cell.v.toISOString().slice(0, 10) : null;
+    default:
+      return null; // error / stub
+  }
+}
+
+/** อ่าน Sheet เป็นตารางสี่เหลี่ยมโดยเริ่มจากแถว/คอลัมน์แรกของชีต เพื่อให้เลขแถว Header ตรงกับที่เห็นใน Excel */
+function sheetToMatrix(ws: XLSX.WorkSheet): Cell[][] {
+  const ref = ws["!ref"];
+  if (!ref) return [];
+  const range = XLSX.utils.decode_range(ref);
+  const width = range.e.c + 1;
+  const out: Cell[][] = [];
+  for (let r = 0; r <= range.e.r; r++) {
+    const row: Cell[] = new Array(width).fill(null);
+    for (let c = range.s.c; c <= range.e.c; c++) {
+      const cell = ws[XLSX.utils.encode_cell({ r, c })] as XLSX.CellObject | undefined;
+      if (cell) row[c] = cellValue(cell);
+    }
+    out.push(row);
+  }
+  return out;
 }
 
 function matrixToTable(matrix: Cell[][], headerRow: number): Table {
@@ -86,8 +137,7 @@ export function readSheet(req: SheetRequest): Table {
   if (p.kind === "csv") return matrixToTable(p.rows, req.headerRow);
   const ws = req.sheet ? p.wb.Sheets[req.sheet] : p.wb.Sheets[p.wb.SheetNames[0]];
   if (!ws) throw new Error(`ไม่พบ Sheet '${req.sheet}'`);
-  const matrix = XLSX.utils.sheet_to_json<Cell[]>(ws, { header: 1, raw: true, defval: null, blankrows: true });
-  return matrixToTable(matrix, req.headerRow);
+  return matrixToTable(sheetToMatrix(ws), req.headerRow);
 }
 
 /** รวมหลายตาราง (ต่างไฟล์/ต่าง Sheet) เป็นตารางเดียว — คอลัมน์ = union ตามลำดับที่เจอ */

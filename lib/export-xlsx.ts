@@ -14,27 +14,70 @@ function colWidth(header: string, rows: Cell[][], idx: number): number {
   return Math.min(m + 4, 40);
 }
 
+const p2 = (n: number) => String(n).padStart(2, "0");
+function stamp(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
+}
+
+function fileList(files: string[]): string {
+  return files.length ? files.join("\n") : "-";
+}
+
 /** สร้างไฟล์ Excel 6 sheet: Summary, All, Match, Mismatch, Missing A, Missing B */
 export async function buildResultWorkbook(res: CompareResult): Promise<ArrayBuffer> {
   const wb = new ExcelJS.Workbook();
   const s = res.summary;
+  const info = res.info;
   const pct = (n: number) => (s.total ? `${((n / s.total) * 100).toFixed(1)}%` : "0%");
 
   const sum = wb.addWorksheet("Summary");
-  sum.addRow(["Metric", "Count", "Pct"]).font = { bold: true };
+  sum.columns = [{ width: 22 }, { width: 18 }, { width: 62 }, { width: 14 }];
+  const head = (cells: (string | number)[]) => {
+    const r = sum.addRow(cells);
+    r.font = { bold: true };
+    return r;
+  };
+
+  sum.addRow(["LOD · Reconcile Tools — สรุปผลการเทียบ"]).font = { bold: true, size: 14 };
+  if (info) {
+    sum.addRow(["สร้างเมื่อ", stamp(info.generatedAt)]);
+    sum.addRow([]);
+    head(["ฝั่ง", "ระบบ", "ไฟล์", "จำนวนแถวดิบ"]);
+    for (const [label, side] of [["A", info.a], ["B", info.b]] as const) {
+      const r = sum.addRow([`ฝั่ง ${label}`, side.system, fileList(side.files), side.rowCount]);
+      r.alignment = { vertical: "top", wrapText: true };
+    }
+    sum.addRow([]);
+    sum.addRow(["Mapping", info.mappingName ?? "-"]);
+    sum.addRow(["Key Columns", res.keys.join(", ")]);
+    sum.addRow(["Compare Fields", res.fields.map((f) => f.name).join(", ") || "-"]);
+    sum.addRow(["ความต่างที่ยอมรับ (ตัวเลข)", info.tolerance]);
+    sum.addRow(["จับคู่แบบหลวม", info.fuzzyKeys ? "ใช่" : "ไม่"]);
+  }
+  sum.addRow([]);
+  head(["Metric", "Count", "Pct"]);
   sum.addRow(["Total Rows", s.total, "100%"]);
   sum.addRow(["Match", s.match, pct(s.match)]);
   sum.addRow(["Mismatch", s.mismatch, pct(s.mismatch)]);
   sum.addRow(["Missing A", s.missingA, pct(s.missingA)]);
   sum.addRow(["Missing B", s.missingB, pct(s.missingB)]);
-  sum.columns = [{ width: 18 }, { width: 12 }, { width: 10 }];
+  if (s.duplicateKeysA || s.duplicateKeysB) {
+    sum.addRow([]);
+    sum.addRow(["Key ซ้ำที่ถูกรวมยอด (A)", s.duplicateKeysA]);
+    sum.addRow(["Key ซ้ำที่ถูกรวมยอด (B)", s.duplicateKeysB]);
+  }
   if (s.perField.length) {
     sum.addRow([]);
-    sum.addRow(["Field", "Rows with diff", "Total |Diff|"]).font = { bold: true };
-    for (const f of s.perField) sum.addRow([f.name + (f.isDate ? " (days)" : ""), f.rowsDiff, f.totalAbsDiff]);
+    head(["Field", "Rows with diff", "Total |Diff|"]);
+    for (const f of s.perField) {
+      const label = f.name + (f.kind === "date" ? " (days)" : f.kind === "text" ? " (text)" : "");
+      sum.addRow([label, f.rowsDiff, f.kind === "text" ? null : f.totalAbsDiff]);
+    }
   }
 
-  const diffIdx = res.fields.map((f) => res.columns.indexOf(f.colDiff));
+  const diffIdx = res.fields.map((f) => (f.colDiff ? res.columns.indexOf(f.colDiff) : -1));
 
   const addSheet = (name: string, rows: Cell[][]) => {
     const ws = wb.addWorksheet(name);

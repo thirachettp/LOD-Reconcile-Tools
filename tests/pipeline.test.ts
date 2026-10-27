@@ -80,3 +80,27 @@ describe("pipeline: MHT (csv) vs FC (xlsx)", () => {
     expect(t.rows).toEqual([["a", "1", null], ["b", "2", "x"]]);
   });
 });
+
+describe("วันที่ใน Excel ไม่ขึ้นกับ timezone", () => {
+  // เขียนเลข serial + รูปแบบเซลล์ตรง ๆ (เหมือนไฟล์ Excel จริง) เพื่อทดสอบเฉพาะฝั่งอ่าน
+  const serial = (y: number, m: number, d: number, hh = 0, mm = 0, ss = 0) =>
+    Date.UTC(y, m - 1, d) / 86_400_000 + 25569 + (hh * 3600 + mm * 60 + ss) / 86_400;
+
+  it("อ่านเลข serial + รูปแบบเซลล์ → YYYY-MM-DD (รวมค่าที่มีเวลาช่วงบ่าย)", () => {
+    const ws: XLSX.WorkSheet = {
+      A1: { t: "s", v: "D" },
+      A2: { t: "n", v: serial(2026, 7, 1), z: "yyyy-mm-dd" },
+      A3: { t: "n", v: serial(2026, 7, 1, 14, 32), z: "yyyy-mm-dd hh:mm" },
+      A4: { t: "n", v: serial(2026, 12, 31, 23, 59, 30), z: "yyyy-mm-dd hh:mm:ss" },
+      A5: { t: "n", v: 12345, z: "General" },
+      A6: { t: "n", v: serial(2026, 1, 5), z: "dd/mm/yyyy" },
+      "!ref": "A1:A6",
+    };
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "S");
+    const buf = XLSX.write(wb, { type: "array", bookType: "xlsx" }) as ArrayBuffer;
+    loadFile("dt", "dt.xlsx", buf.byteLength, buf);
+    const t = readCombined([{ fileId: "dt", sheet: "S", headerRow: 1 }]).table;
+    expect(t.rows.map((r) => r[0])).toEqual(["2026-07-01", "2026-07-01 14:32", "2026-12-31 23:59:30", 12345, "2026-01-05"]);
+  });
+});

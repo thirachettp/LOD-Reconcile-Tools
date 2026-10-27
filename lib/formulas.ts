@@ -105,13 +105,28 @@ export function applyFormula(
 
   const fn = cfg.function;
 
+  // เลือกหลายคอลัมน์ = ใช้ค่าแรกที่ไม่ว่างของแต่ละแถว (เช่น ไฟล์รวมที่บางไฟล์ใช้ sku_id บางไฟล์ใช้ IBC)
+  const coalesce = (): Cell[] => {
+    const arrs = cols.map((c) => column(table, c.idx));
+    const out = new Array<Cell>(n).fill(null);
+    for (let i = 0; i < n; i++) {
+      for (const a of arrs) {
+        if (!isMissing(a[i])) {
+          out[i] = a[i];
+          break;
+        }
+      }
+    }
+    return out;
+  };
+
   if (fn in DATE_ORDER_FN) {
-    const vals = column(table, cols[0].idx);
+    const vals = coalesce();
     return { values: vals.map((v) => formatDay(parseDay(v, DATE_ORDER_FN[fn]))), warnings };
   }
 
   if (fn === "FIRST") {
-    const vals = column(table, cols[0].idx);
+    const vals = coalesce();
     if (isDateLike(vals, dateOrder)) {
       return { values: vals.map((v) => formatDay(parseDay(v, dateOrder))), warnings };
     }
