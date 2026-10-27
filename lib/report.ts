@@ -10,6 +10,9 @@ export interface ReportItem {
   totals: string[];
 }
 
+/** B เป็นกี่ % ของ A (ทศนิยม 2 ตำแหน่ง) */
+const pct = (a: number | null, b: number | null) => (a === null || b === null || a === 0 ? "-" : `${((b / a) * 100).toFixed(2)} %`);
+
 const n = (x: number | null) => (x === null ? "-" : x.toLocaleString("en-US", { maximumFractionDigits: 2 }));
 
 /** ชื่อฝั่งสำหรับหัวข้อ: ระบบ (FC/JDA/MHT) หรือชื่อไฟล์แรก (ตัดนามสกุล) ถ้าเป็นระบบอื่น */
@@ -25,10 +28,10 @@ export function makeItem(res: Pick<CompareResult, "keys" | "fields" | "summary">
   const status =
     bad === 0
       ? "Match"
-      : `Not Match (Mismatch ${s.mismatch.toLocaleString()}, Missing A ${s.missingA.toLocaleString()}, Missing B ${s.missingB.toLocaleString()} จาก ${s.total.toLocaleString()} Key)`;
-  const totals = [`Rows: ${s.rowsA.toLocaleString()} vs ${s.rowsB.toLocaleString()}`];
+      : `Not Match (Mismatch ${s.mismatch.toLocaleString()}, Missing A ${s.missingA.toLocaleString()}, Missing B ${s.missingB.toLocaleString()} จาก ${s.total.toLocaleString()} Key, Match ${s.total ? ((s.match / s.total) * 100).toFixed(2) : "0.00"} %)`;
+  const totals = [`Rows: ${s.rowsA.toLocaleString()} vs ${s.rowsB.toLocaleString()} (${pct(s.rowsA, s.rowsB)})`];
   for (const f of s.perField) {
-    if (f.kind === "number") totals.push(`${f.name}: ${n(f.sumA)} vs ${n(f.sumB)}`);
+    if (f.kind === "number") totals.push(`${f.name}: ${n(f.sumA)} vs ${n(f.sumB)} (${pct(f.sumA, f.sumB)})`);
   }
   return {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,

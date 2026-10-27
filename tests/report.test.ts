@@ -18,11 +18,11 @@ describe("report", () => {
     const r = compareTables(t([["1", "d", 5], ["2", "d", 1]]), t([["1", "d", 4]]), ["IBC", "SDEPT"], ["Quantity"], opts);
     const it = makeItem(r, "X vs Y");
     expect(it.status).toContain("Not Match");
-    expect(it.totals).toContain("Rows: 2 vs 1");
-    expect(it.totals).toContain("Quantity: 6 vs 4");
+    expect(it.totals).toContain("Rows: 2 vs 1 (50.00 %)");
+    expect(it.totals).toContain("Quantity: 6 vs 4 (66.67 %)");
     const txt = reportText([it, makeItem(r, "P vs Q")], true);
     expect(txt).toContain("2. P vs Q");
-    expect(txt).toContain("   Quantity: 6 vs 4");
+    expect(txt).toContain("   Quantity: 6 vs 4 (66.67 %)");
   });
   it("default side name", () => {
     expect(defaultSideName({ system: "FC", files: ["a.xlsx"], rowCount: 1 })).toBe("FC");
