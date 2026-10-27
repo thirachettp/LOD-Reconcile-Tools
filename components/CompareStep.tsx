@@ -1,0 +1,304 @@
+"use client";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { call, download } from "@/lib/engine-client";
+import type { CompareMeta, StatusFilter } from "@/lib/engine.worker";
+import type { Cell } from "@/lib/types";
+import { Alert, ColumnPicker, Spinner, fmtCell } from "./ui";
+
+const PAGE = 100;
+const FILTERS: StatusFilter[] = ["All", "Match", "Mismatch", "Missing A", "Missing B"];
+
+function statusClass(s: string) {
+  if (s === "Match") return "st-Match";
+  if (s === "Mismatch") return "st-Mismatch";
+  return "st-Missing";
+}
+
+function ResultTable({ meta }: { meta: CompareMeta }) {
+  const [filter, setFilter] = useState<StatusFilter>("All");
+  const [search, setSearch] = useState("");
+  const [q, setQ] = useState("");
+  const [sort, setSort] = useState<{ col: string; dir: "asc" | "desc" } | null>(null);
+  const [page, setPage] = useState(0);
+  const [data, setData] = useState<{ total: number; rows: Cell[][] }>({ total: 0, rows: [] });
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setQ(search);
+      setPage(0);
+    }, 250);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  useEffect(() => {
+    let off = false;
+    setLoading(true);
+    call("page", { filter, search: q, sortCol: sort?.col ?? null, sortDir: sort?.dir ?? "desc", offset: page * PAGE, limit: PAGE })
+      .then((r) => !off && setData(r))
+      .finally(() => !off && setLoading(false));
+    return () => {
+      off = true;
+    };
+  }, [meta, filter, q, sort, page]);
+
+  const s = meta.summary;
+  const counts: Record<StatusFilter, number> = { All: s.total, Match: s.match, Mismatch: s.mismatch, "Missing A": s.missingA, "Missing B": s.missingB };
+  const pages = Math.max(1, Math.ceil(data.total / PAGE));
+
+  const clickSort = (col: string) => {
+    setPage(0);
+    setSort((cur) => (cur?.col === col ? (cur.dir === "desc" ? { col, dir: "asc" } : null) : { col, dir: "desc" }));
+  };
+
+  return (
+    <>
+      <div className="row" style={{ marginBottom: 10 }}>
+        <div className="seg">
+          {FILTERS.map((f) => (
+            <button key={f} className={filter === f ? "on" : ""} onClick={() => { setFilter(f); setPage(0); }}>
+              {f}
+              <span className="n">{counts[f].toLocaleString()}</span>
+            </button>
+          ))}
+        </div>
+        <input className="input" style={{ maxWidth: 260 }} placeholder={`ค้นหา ${meta.keys.join(" / ")}…`} value={search} onChange={(e) => setSearch(e.target.value)} />
+        <span className="spacer" />
+        {loading && <Spinner />}
+        <span className="muted">
+          แสดง {data.total.toLocaleString()} จาก {s.total.toLocaleString()} แถว
+        </span>
+      </div>
+
+      <div className="tbl-wrap">
+        <table className="tbl">
+          <thead>
+            <tr>
+              {meta.columns.map((c) => {
+                const sortable = c.endsWith("_Diff") || meta.keys.includes(c);
+                return (
+                  <th key={c} className={sortable ? "sortable" : ""} onClick={sortable ? () => clickSort(c) : undefined} title={c.endsWith("_Diff") ? "คลิกเพื่อเรียงตามความต่างสูงสุด" : undefined}>
+                    {c}
+                    {sort?.col === c ? (sort.dir === "desc" ? " ▼" : " ▲") : ""}
+                  </th>
+                );
+              })}
+            </tr>
+          </thead>
+          <tbody>
+            {data.rows.map((r, i) => (
+              <tr key={i}>
+                {r.map((v, j) => {
+                  const col = meta.columns[j];
+                  let cls = typeof v === "number" ? "num" : "";
+                  if (j === meta.statusCol) cls = statusClass(String(v));
+                  else if (col.endsWith("_Diff") && typeof v === "number") cls += v > 0 ? " d-pos" : v < 0 ? " d-neg" : " d-zero";
+                  return (
+                    <td key={j} className={cls}>
+                      {fmtCell(v)}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+            {data.rows.length === 0 && !loading && (
+              <tr>
+                <td colSpan={meta.columns.length} className="muted" style={{ textAlign: "center", padding: 24 }}>
+                  ไม่มีข้อมูล
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="pager">
+        <button className="btn small" disabled={page === 0} onClick={() => setPage(page - 1)}>
+          ← ก่อนหน้า
+        </button>
+        <span className="muted">
+          หน้า {page + 1} / {pages}
+        </span>
+        <button className="btn small" disabled={page + 1 >= pages} onClick={() => setPage(page + 1)}>
+          ถัดไป →
+        </button>
+        <span className="spacer" />
+        <button
+          className="btn small"
+          onClick={async () => download(await call("exportCsv", { filter, search: q, sortCol: sort?.col ?? null, sortDir: sort?.dir ?? "desc" }), `Compare_${filter.replace(" ", "")}.csv`, "text/csv;charset=utf-8")}
+        >
+          📥 CSV (ตามตัวกรองปัจจุบัน)
+        </button>
+      </div>
+    </>
+  );
+}
+
+export function CompareStep(props: {
+  stdColsA: string[];
+  stdColsB: string[];
+  defaultFields?: string[];
+  tagA: string;
+  tagB: string;
+  meta: CompareMeta | null;
+  onMeta: (m: CompareMeta | null) => void;
+  onBack: () => void;
+}) {
+  const common = useMemo(() => props.stdColsA.filter((c) => props.stdColsB.includes(c)), [props.stdColsA, props.stdColsB]);
+  const [keys, setKeys] = useState<string[]>([]);
+  const [fields, setFields] = useState<string[]>([]);
+  const [fuzzy, setFuzzy] = useState(false);
+  const [tol, setTol] = useState("0");
+  const [running, setRunning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // ค่าเริ่มต้น: Key = SKU+Location, Compare Fields = ตามชุดสูตร (หรือทุกฟิลด์ร่วม)
+  useEffect(() => {
+    const k = ["SKU", "Location"].filter((x) => common.includes(x));
+    const kk = k.length ? k : common.slice(0, 1);
+    setKeys(kk);
+    const rest = common.filter((c) => !kk.includes(c));
+    const pref = props.defaultFields?.filter((f) => rest.includes(f));
+    setFields(pref && pref.length ? pref : rest);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [common.join("|"), (props.defaultFields ?? []).join("|")]);
+
+  const run = useCallback(async () => {
+    setError(null);
+    setRunning(true);
+    try {
+      const m = await call("compare", {
+        keys,
+        fields: fields.filter((f) => !keys.includes(f)),
+        opts: { fuzzyKeys: fuzzy, tolerance: Math.abs(Number(tol) || 0), tagA: props.tagA, tagB: props.tagB },
+      });
+      props.onMeta(m);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRunning(false);
+    }
+  }, [keys, fields, fuzzy, tol, props]);
+
+  const m = props.meta;
+  const pct = m && m.summary.total ? (m.summary.match / m.summary.total) * 100 : 0;
+
+  return (
+    <div>
+      <div className="sec-title">Compare & Dashboard</div>
+      <div className="sec-sub">เลือก Key ที่ใช้จับคู่แถว และฟิลด์ที่ต้องการเทียบ</div>
+
+      <div className="card">
+        <div className="grid2">
+          <div>
+            <div className="card-label">⚙️ Key Columns (Join Keys)</div>
+            <ColumnPicker options={common} value={keys} onChange={(v) => { setKeys(v); setFields((f) => f.filter((x) => !v.includes(x))); }} />
+          </div>
+          <div>
+            <div className="card-label">📋 Compare Fields</div>
+            <ColumnPicker options={common.filter((c) => !keys.includes(c))} value={fields} onChange={setFields} />
+          </div>
+        </div>
+        <hr className="s" />
+        <div className="row">
+          <label className="row" style={{ gap: 6 }} title="ตัดช่องว่างหัวท้ายและไม่สนตัวพิมพ์เล็ก/ใหญ่ตอนจับคู่ Key (ปกติเทียบตรงตามตัวอักษร)">
+            <input type="checkbox" checked={fuzzy} onChange={(e) => setFuzzy(e.target.checked)} />
+            จับคู่ Key แบบหลวม (ตัดช่องว่าง / ไม่สนตัวพิมพ์)
+          </label>
+          <label className="row" style={{ gap: 6 }} title="ผลต่างตัวเลขไม่เกินค่านี้ถือว่าตรงกัน">
+            ยอมให้ต่างได้ไม่เกิน
+            <input className="input" style={{ width: 80 }} type="number" min={0} step="any" value={tol} onChange={(e) => setTol(e.target.value)} />
+          </label>
+          <span className="spacer" />
+          <button className="btn" onClick={props.onBack}>
+            ← กลับ
+          </button>
+          <button className="btn primary" disabled={running || keys.length === 0 || fields.length === 0} onClick={run}>
+            {running ? "กำลัง Compare…" : "⚡ Run Compare"}
+          </button>
+        </div>
+        {error && <Alert kind="bad">{error}</Alert>}
+      </div>
+
+      {m && (
+        <>
+          {m.notes.length > 0 && (
+            <Alert kind="warn">
+              <ul>
+                {m.notes.map((n) => (
+                  <li key={n}>{n}</li>
+                ))}
+              </ul>
+            </Alert>
+          )}
+          <div className="kpis">
+            <div className="kpi">
+              <div className="kpi-v">{m.summary.total.toLocaleString()}</div>
+              <div className="kpi-l">Total Rows</div>
+            </div>
+            <div className="kpi match">
+              <div className="kpi-v">{m.summary.match.toLocaleString()}</div>
+              <div className="kpi-l">Match ({pct.toFixed(1)}%)</div>
+            </div>
+            <div className="kpi mis">
+              <div className="kpi-v">{m.summary.mismatch.toLocaleString()}</div>
+              <div className="kpi-l">Mismatch</div>
+            </div>
+            <div className="kpi miss">
+              <div className="kpi-v">{m.summary.missingA.toLocaleString()}</div>
+              <div className="kpi-l">Missing A</div>
+            </div>
+            <div className="kpi miss">
+              <div className="kpi-v">{m.summary.missingB.toLocaleString()}</div>
+              <div className="kpi-l">Missing B</div>
+            </div>
+          </div>
+          <div style={{ marginBottom: 16 }}>
+            <div className="row muted" style={{ justifyContent: "space-between", flexWrap: "nowrap" }}>
+              <span>Match Rate</span>
+              <span>{pct.toFixed(1)}%</span>
+            </div>
+            <div className="bar">
+              <div style={{ width: `${pct}%` }} />
+            </div>
+          </div>
+
+          {m.summary.perField.length > 0 && (
+            <>
+              <div className="card-label">📐 Total Diff ต่อ Field</div>
+              <div className="kpis">
+                {m.summary.perField.map((f) => (
+                  <div className="kpi" key={f.name}>
+                    <div className="kpi-v" style={{ fontSize: 22 }}>
+                      {f.totalAbsDiff.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                      {f.isDate ? " วัน" : ""}
+                    </div>
+                    <div className="kpi-l">
+                      {f.name} · {f.rowsDiff.toLocaleString()} แถวต่าง
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          <div className="card">
+            <ResultTable meta={m} />
+            <hr className="s" />
+            <button
+              className="btn primary"
+              onClick={async () => {
+                const buf = await call("exportXlsx", undefined as never);
+                const d = new Date();
+                const stamp = `${String(d.getDate()).padStart(2, "0")}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getFullYear()).slice(2)}_${String(d.getHours()).padStart(2, "0")}${String(d.getMinutes()).padStart(2, "0")}`;
+                download(buf, `CompareStock_${stamp}.xlsx`, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+              }}
+            >
+              📥 Export Excel (6 sheets)
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}

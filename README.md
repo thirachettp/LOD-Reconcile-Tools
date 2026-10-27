@@ -1,1 +1,56 @@
-# LOD-Reconcile-Tools
+# LOD · Reconcile Tools
+
+เครื่องมือเทียบข้อมูลสต็อกระหว่างระบบ **FC · JDA · MHT** (ย้ายมาจาก Streamlit `Reconciliation-Tool`)
+
+- ประมวลผล **ทั้งหมดในเบราว์เซอร์** (Web Worker) — ไฟล์ไม่ถูกอัปโหลดไปเซิร์ฟเวอร์ ไม่มี database
+- รองรับ `.csv` `.xlsx` `.xls` หลายไฟล์/หลาย Sheet และกำหนดแถว Header ได้
+- **ชุดสูตรตั้งต้นตามคู่ระบบ**: เลือก/อัปโหลดคู่ เช่น MHT ↔ FC แล้วได้ Mapping (SKU, Location, Qty, BBDate) ทันที
+  - ตรวจจับระบบจากหัวตารางไฟล์อัตโนมัติ (แก้เองได้)
+  - แก้สูตรแล้วระบบจำไว้ต่อคู่ระบบ (localStorage) · กลับเป็นสูตรตั้งต้นได้ · Export/Import Mapping JSON (เข้ากันได้กับไฟล์จากเวอร์ชัน Streamlit)
+  - ระบบ "อื่น ๆ" เดาคอลัมน์จากชื่อ
+- Functions: `FIRST SUM SUMIF MIN MAX COUNT วดป ปดว ดวป` (SUMIF มี 12 operators รวม IN / NOT IN)
+- Compare: Key หลายคอลัมน์, จับคู่แบบหลวม (ตัดช่องว่าง/ไม่สนตัวพิมพ์), ค่าความต่างที่ยอมรับได้, แจ้ง Key ซ้ำ, Dashboard, ค้นหา/เรียงตามความต่าง, Export Excel 6 sheets + CSV
+
+## ชุดสูตรตั้งต้น
+
+| ระบบ | SKU | Location | Qty (SUM) | BBDate (MIN) |
+|---|---|---|---|---|
+| FC | `sku_id` | `location_id` | `binbalance_qtybal` | `exp_date` |
+| JDA | `SKU` | `SLOT` | `SLOT_SOH` | `EXP_DATE` |
+| MHT | `SKU` | `Location` | `On Hand` | — (ไม่มีวันหมดอายุ) |
+
+คู่ที่มี MHT จะเลือกเทียบเฉพาะ `Qty` เป็นค่าเริ่มต้น แก้ได้ที่ `lib/presets.ts`
+(เพิ่มสูตรเฉพาะคู่ หรือระบบใหม่ที่ `SYSTEM_MAPPINGS` / `SIGNATURES`)
+
+## พัฒนา
+
+```bash
+npm install
+npm run dev        # http://localhost:3000
+npm test           # vitest (logic + pipeline)
+npm run build
+```
+
+## Deploy บน Vercel (region sin1 — Singapore)
+
+`vercel.json` ตั้ง `"regions": ["sin1"]` ไว้แล้ว
+
+1. Push repo นี้ขึ้น GitHub
+2. Vercel → **Add New → Project** → เลือก repo → Framework = Next.js (ตรวจพบอัตโนมัติ) → Deploy
+3. หรือ CLI: `npx vercel --prod` (ครั้งแรกจะให้ login และ link project)
+
+หมายเหตุ: แอพเป็น static + client-side ไม่มี Serverless Function และไม่เก็บข้อมูลฝั่งเซิร์ฟเวอร์
+`regions` จึงมีผลเฉพาะ Function ที่จะเพิ่มในอนาคต (เช่น API/DB) ส่วนหน้าเว็บให้บริการผ่าน Edge Network
+
+## ต่างจากเวอร์ชัน Streamlit
+
+- ผลต่างวันที่ที่ **ว่างทั้งสองฝั่ง** ไม่นับเป็น Mismatch (เดิมนับ)
+- ชื่อคอลัมน์ผลลัพธ์ใช้รหัสระบบ (`Qty_MHT`, `Qty_FC`)
+- ค่าตัวเลขที่มี `,` คั่นหลักพัน (เช่น `1,234`) อ่านเป็นตัวเลขได้
+- รวมไฟล์อัตโนมัติทุกกรณี (ไม่มีปุ่ม "รวมไฟล์")
+- ไฟล์ CSV ที่เป็น TIS-620/Windows-874 อ่านภาษาไทยได้
+
+## ข้อจำกัด
+
+- `.xls` / `.xlsx` อ่านด้วย SheetJS (`xlsx@0.18.5` จาก npm) — ควรใช้กับไฟล์ที่เชื่อถือได้ (ไฟล์จากระบบของเราเอง)
+- ไฟล์ขนาดหลายร้อย MB ขึ้นกับ memory ของเบราว์เซอร์
