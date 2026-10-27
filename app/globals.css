@@ -84,7 +84,8 @@ button, input, select { font: inherit; color: inherit; }
 .card-label { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.09em; margin-bottom: 12px; }
 .sec-title { font-size: 18px; font-weight: 700; }
 .sec-sub { font-size: 13px; color: var(--text-muted); margin: 2px 0 16px; }
-.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+.grid2 > * { min-width: 0; }
 @media (max-width: 900px) { .grid2 { grid-template-columns: 1fr; } }
 .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .spacer { flex: 1; }
@@ -128,8 +129,8 @@ hr.s { border: 0; border-top: 1px solid var(--border); margin: 16px 0; }
 .alert ul { margin: 4px 0 0 18px; padding: 0; }
 
 /* tables */
-.tbl-wrap { overflow: auto; border: 1px solid var(--border); border-radius: 10px; max-height: 520px; }
-table.tbl { border-collapse: collapse; width: 100%; font-size: 13px; }
+.tbl-wrap { max-width: 100%; overflow: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--border); border-radius: 10px; max-height: 520px; }
+table.tbl { border-collapse: collapse; min-width: 100%; width: max-content; font-size: 13px; }
 .tbl th { position: sticky; top: 0; background: var(--bg-card-alt); text-align: left; font-weight: 700; padding: 7px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; z-index: 1; }
 .tbl th.sortable { cursor: pointer; user-select: none; }
 .tbl td { padding: 6px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; font-variant-numeric: tabular-nums; }
@@ -207,3 +208,4 @@ table.tbl { border-collapse: collapse; width: 100%; font-size: 13px; }
 .info-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 12px 16px; }
 .info-card .files { margin: 6px 0 0; padding: 0 0 0 18px; font-size: 13px; }
 .info-card .files li { overflow-wrap: anywhere; }
+.stepper { overflow-x: auto; }

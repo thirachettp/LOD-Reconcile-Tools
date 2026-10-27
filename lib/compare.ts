@@ -170,7 +170,19 @@ export function compareTables(
     missingB: 0,
     duplicateKeysA: A.duplicates,
     duplicateKeysB: B.duplicates,
-    perField: meta.map((m) => ({ name: m.name, isDate: m.isDate, kind: m.kind, totalAbsDiff: 0, rowsDiff: 0 })),
+    rowsA: stdA.rows.length,
+    rowsB: stdB.rows.length,
+    keysA: A.map.size,
+    keysB: B.map.size,
+    perField: meta.map((m) => ({
+      name: m.name,
+      isDate: m.isDate,
+      kind: m.kind,
+      totalAbsDiff: 0,
+      rowsDiff: 0,
+      sumA: m.kind === "number" ? 0 : null,
+      sumB: m.kind === "number" ? 0 : null,
+    })),
   };
 
   const tol = Math.abs(opts.tolerance || 0);
@@ -218,6 +230,8 @@ export function compareTables(
         const nb = gb ? gb.nums[i] : null;
         va = na;
         vb = nb;
+        if (na !== null) summary.perField[i].sumA = (summary.perField[i].sumA ?? 0) + na;
+        if (nb !== null) summary.perField[i].sumB = (summary.perField[i].sumB ?? 0) + nb;
         diff = roundDiff((na ?? 0) - (nb ?? 0));
         bad = Math.abs(diff) > tol;
       }

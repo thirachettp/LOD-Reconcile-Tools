@@ -1,4 +1,5 @@
 "use client";
+import type { ReportItem } from "@/lib/report";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CompareStep, type CompareSel } from "@/components/CompareStep";
 import { MappingStep, type BuildInfo, type LibraryApi, type SaveResult } from "@/components/MappingStep";
@@ -55,6 +56,7 @@ export default function Page() {
   const [step, setStep] = useState(1);
   const [stdBuild, setStdBuild] = useState<BuildInfo | null>(null);
   const [compareMeta, setCompareMeta] = useState<CompareMeta | null>(null);
+  const [report, setReport] = useState<ReportItem[]>([]);
 
   const invalidate = useCallback(() => {
     setStdBuild(null);
@@ -350,6 +352,8 @@ export default function Page() {
           runInfo={{ mappingName, a: sideInfo(a), b: sideInfo(b) }}
           sel={cmp}
           selVersion={cmpVersion}
+          report={report}
+          onReport={setReport}
           onSel={(s) => {
             setCmp(s);
             if (current) setDirty(true);

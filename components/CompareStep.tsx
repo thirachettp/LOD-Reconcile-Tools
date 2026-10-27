@@ -4,6 +4,8 @@ import { call, download } from "@/lib/engine-client";
 import type { CompareMeta, StatusFilter } from "@/lib/engine.worker";
 import type { Cell, RunInfo, SideInfo } from "@/lib/types";
 import { Alert, ColumnPicker, Spinner, fmtCell } from "./ui";
+import { ReportCard } from "./ReportCard";
+import { defaultSideName, makeItem, type ReportItem } from "@/lib/report";
 
 export interface CompareSel {
   keys?: string[];
@@ -115,7 +117,7 @@ function ResultTable({ meta }: { meta: CompareMeta }) {
             {data.rows.map((r, i) => (
               <tr key={i}>
                 {r.map((v, j) => {
-                  const col = meta.columns[j];
+                  const col = meta.columns[j] ?? "";
                   let cls = typeof v === "number" ? "num" : "";
                   if (j === meta.statusCol) cls = statusClass(String(v));
                   else if (col.endsWith("_Diff") && typeof v === "number") cls += v > 0 ? " d-pos" : v < 0 ? " d-neg" : " d-zero";
@@ -174,6 +176,8 @@ export function CompareStep(props: {
   sel: CompareSel;
   selVersion: number;
   onSel: (s: CompareSel) => void;
+  report: ReportItem[];
+  onReport: (r: ReportItem[]) => void;
 }) {
   const common = useMemo(() => props.stdColsA.filter((c) => props.stdColsB.includes(c)), [props.stdColsA, props.stdColsB]);
   const [keys, setKeys] = useState<string[]>([]);
@@ -182,6 +186,8 @@ export function CompareStep(props: {
   const [tol, setTol] = useState("0");
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [repTitle, setRepTitle] = useState("");
+  const [repTitleTouched, setRepTitleTouched] = useState(false);
 
   // ค่าเริ่มต้น: Key/Fields จาก Mapping ที่โหลดมา ไม่ก็ Key = SKU+Location และ Fields = ตามชุดสูตร (หรือทุกฟิลด์ร่วม)
   useEffect(() => {
@@ -231,6 +237,8 @@ export function CompareStep(props: {
   }, [keys, fields, fuzzy, tol, props]);
 
   const m = props.meta;
+  const autoTitle = `${defaultSideName(m?.info?.a ?? props.runInfo.a)} vs ${defaultSideName(m?.info?.b ?? props.runInfo.b)}`;
+  const shownTitle = repTitleTouched ? repTitle : autoTitle;
   const pct = m && m.summary.total ? (m.summary.match / m.summary.total) * 100 : 0;
 
   return (
@@ -345,8 +353,24 @@ export function CompareStep(props: {
             </>
           )}
 
+          <ReportCard
+            title={shownTitle}
+            onTitle={(t) => {
+              setRepTitle(t);
+              setRepTitleTouched(true);
+            }}
+            items={props.report}
+            canAdd={shownTitle.trim().length > 0}
+            onAdd={() => {
+              props.onReport([...props.report, makeItem(m, shownTitle.trim())]);
+              setRepTitleTouched(false);
+            }}
+            onRemove={(id) => props.onReport(props.report.filter((x) => x.id !== id))}
+            onClear={() => props.onReport([])}
+          />
+
           <div className="card">
-            <ResultTable meta={m} />
+            <ResultTable key={`${m.info?.generatedAt ?? ""}|${m.columns.join("|")}`} meta={m} />
             <hr className="s" />
             <button
               className="btn primary"

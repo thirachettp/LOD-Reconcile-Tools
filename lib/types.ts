@@ -141,7 +141,21 @@ export interface CompareSummary {
   /** key ซ้ำที่ถูกรวมยอด (จำนวนแถวที่เกินมา) */
   duplicateKeysA: number;
   duplicateKeysB: number;
-  perField: { name: string; isDate: boolean; kind: FieldKind; totalAbsDiff: number; rowsDiff: number }[];
+  /** จำนวนแถวมาตรฐานของแต่ละฝั่ง และจำนวน Key ที่ไม่ซ้ำ */
+  rowsA: number;
+  rowsB: number;
+  keysA: number;
+  keysB: number;
+  perField: {
+    name: string;
+    isDate: boolean;
+    kind: FieldKind;
+    totalAbsDiff: number;
+    rowsDiff: number;
+    /** ผลรวมของแต่ละฝั่ง (เฉพาะฟิลด์ตัวเลข) */
+    sumA: number | null;
+    sumB: number | null;
+  }[];
 }
 
 export interface CompareResult {
