@@ -327,7 +327,7 @@ function TeamBar({ lib }: { lib: LibraryApi }) {
   );
 }
 
-function LibraryCard({ lib, sysA, sysB, preset, touched, onImport, onExport }: {
+export function LibraryCard({ lib, sysA, sysB, preset, touched, onImport, onExport }: {
   lib: LibraryApi;
   sysA: SystemCode;
   sysB: SystemCode;

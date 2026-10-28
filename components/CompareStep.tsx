@@ -230,6 +230,8 @@ export function CompareStep(props: {
   /** โหมดหลายคู่: id ของคู่ และซ่อนการ์ดรายงานรายคู่ (ใช้รายงานรวมแทน) */
   pairId?: string;
   hideReport?: boolean;
+  /** แถบบันทึก/โหลด Template (แสดงบนสุดของหน้า) */
+  templateBar?: ReactNode;
 }) {
   const common = useMemo(() => props.stdColsA.filter((c) => props.stdColsB.includes(c)), [props.stdColsA, props.stdColsB]);
   const [keys, setKeys] = useState<string[]>([]);
@@ -250,7 +252,10 @@ export function CompareStep(props: {
     const rest = common.filter((c) => !kk.includes(c));
     const wantFields = props.sel.fields?.filter((f) => rest.includes(f));
     const pref = props.defaultFields?.filter((f) => rest.includes(f));
-    setFields(wantFields && wantFields.length ? wantFields : pref && pref.length ? pref : rest);
+    const ff = wantFields && wantFields.length ? wantFields : pref && pref.length ? pref : rest;
+    setFields(ff);
+    // แจ้ง Key/Fields ที่ใช้อยู่จริงขึ้นไป เพื่อให้ Template ที่บันทึกมีค่าเหล่านี้ด้วย (แม้ผู้ใช้ไม่ได้แก้เอง)
+    props.onSel({ keys: kk, fields: ff });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [common.join("|"), (props.defaultFields ?? []).join("|"), props.selVersion]);
 
@@ -316,7 +321,8 @@ export function CompareStep(props: {
   return (
     <div>
       <div className="sec-title">Compare & Dashboard</div>
-      <div className="sec-sub">เลือก Key ที่ใช้จับคู่แถว และฟิลด์ที่ต้องการเทียบ แล้วกด Run Compare</div>
+      <div className="sec-sub">เลือก Key ที่ใช้จับคู่แถว และฟิลด์ที่ต้องการเทียบ แล้วกด Run Compare — บันทึกเป็น Template เพื่อใช้ซ้ำ/แชร์ทีมได้ที่การ์ดด้านล่าง</div>
+      {props.templateBar}
 
       <div className="card">
         <div className="grid2">

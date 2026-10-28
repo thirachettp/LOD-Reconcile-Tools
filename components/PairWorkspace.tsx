@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CompareStep, type CompareSel } from "./CompareStep";
-import { MappingStep, type BuildInfo, type LibraryApi, type LibraryCurrent, type SaveResult } from "./MappingStep";
+import { LibraryCard, MappingStep, type BuildInfo, type LibraryApi, type LibraryCurrent, type SaveResult } from "./MappingStep";
 import { call, download } from "@/lib/engine-client";
 import type { CompareMeta } from "@/lib/engine.worker";
 import {
@@ -341,6 +341,32 @@ export function PairWorkspace({
       : `สูตรตั้งต้น ${SYSTEM_LABELS[a.system]} ↔ ${SYSTEM_LABELS[b.system]}`;
 
 
+  const importText = (text: string) => {
+    try {
+      const imp = importMapping(text);
+      applyMapping(
+        {
+          rows: imp.rows,
+          sysA: isSystem(imp.sysA) ? imp.sysA : a.system,
+          sysB: isSystem(imp.sysB) ? imp.sysB : b.system,
+          compareKeys: imp.keys,
+          compareFields: imp.fields,
+        },
+        null,
+      );
+      setDirty(false);
+      setBuildError(null);
+    } catch (e) {
+      setBuildError(`นำเข้า Mapping ไม่สำเร็จ: ${errText(e)}`);
+    }
+  };
+  const exportJson = () =>
+    download(
+      exportMapping(a.system, b.system, rows, { name: current?.name, keys: cmp.keys, fields: cmp.fields }),
+      `Mapping_${(current?.name ?? `${a.system}_${b.system}`).replace(/[^0-9A-Za-zก-๙_-]+/g, "_")}.json`,
+      "application/json",
+    );
+
   return (
     <>
       {view === "mapping" && (
@@ -357,32 +383,8 @@ export function PairWorkspace({
             preset={preset}
             touched={touched}
             lib={lib}
-            onImport={(text) => {
-              try {
-                const imp = importMapping(text);
-                applyMapping(
-                  {
-                    rows: imp.rows,
-                    sysA: isSystem(imp.sysA) ? imp.sysA : a.system,
-                    sysB: isSystem(imp.sysB) ? imp.sysB : b.system,
-                    compareKeys: imp.keys,
-                    compareFields: imp.fields,
-                  },
-                  null,
-                );
-                setDirty(false);
-                setBuildError(null);
-              } catch (e) {
-                setBuildError(`นำเข้า Mapping ไม่สำเร็จ: ${errText(e)}`);
-              }
-            }}
-            onExport={() =>
-              download(
-                exportMapping(a.system, b.system, rows, { name: current?.name, keys: cmp.keys, fields: cmp.fields }),
-                `Mapping_${(current?.name ?? `${a.system}_${b.system}`).replace(/[^0-9A-Za-zก-๙_-]+/g, "_")}.json`,
-                "application/json",
-              )
-            }
+            onImport={importText}
+            onExport={exportJson}
             build={stdBuild}
             building={building}
             error={buildError}
@@ -420,9 +422,22 @@ export function PairWorkspace({
           onReport={onReport}
           hideReport={hideReport}
           pairId={pairId ?? "main"}
+          templateBar={
+            <LibraryCard
+              lib={lib}
+              sysA={a.system}
+              sysB={b.system}
+              preset={preset}
+              touched={touched}
+              onImport={importText}
+              onExport={exportJson}
+            />
+          }
           onSel={(s) => {
+            // ครั้งแรกที่รับค่าเริ่มต้น หรือค่าไม่เปลี่ยน → ไม่นับว่าแก้ไข Template
+            const same = JSON.stringify([cmp.keys, cmp.fields]) === JSON.stringify([s.keys, s.fields]);
+            if (!same && cmp.keys !== undefined && current) setDirty(true);
             setCmp(s);
-            if (current) setDirty(true);
           }}
         />
       )}
