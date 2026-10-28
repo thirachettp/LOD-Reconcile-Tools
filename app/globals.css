@@ -258,3 +258,20 @@ details.fold > :not(summary) { padding: 0 18px 16px; }
 .mode-nav a.on { background: var(--accent); color: var(--accent-text); }
 .mode-nav a:not(.on):hover { color: var(--accent); }
 .multi-ds { grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr)) !important; }
+
+/* ผลต่างต่อฟิลด์ (การ์ด) */
+.fcards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; margin-top: 12px; }
+.fcard { background: var(--bg-card); border: 1px solid var(--border); border-left: 4px solid var(--ok); border-radius: 10px; padding: 10px 12px; }
+.fcard.bad { border-left-color: var(--warn); }
+.fcard-h { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.fcard-name { font-weight: 700; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fcard-kind { font-size: 11px; color: var(--text-muted); border: 1px solid var(--border); border-radius: 6px; padding: 0 6px; }
+.fcard-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-bottom: 8px; }
+.fcard-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.fcard-l { font-size: 11px; color: var(--text-muted); }
+.fcard-v { font-size: 14px; font-weight: 700; font-family: "JetBrains Mono", ui-monospace, monospace; overflow-wrap: anywhere; }
+.fcard-v.neg { color: var(--warn); }
+.fcard-v.muted { color: var(--text-muted); font-weight: 500; }
+.fcard-f { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+.bar.slim { height: 5px; }
+.exec-wrap { background: #eef1f6; border-radius: 10px; padding: 16px; overflow-x: auto; }

@@ -2,10 +2,12 @@
 import { ModeNav } from "@/components/ModeNav";
 import { useMemo, useState } from "react";
 import { PairWorkspace, type PairStatus, type PairView } from "@/components/PairWorkspace";
+import { ExecDashboard } from "@/components/ExecDashboard";
 import { UploadCard } from "@/components/UploadStep";
 import { Alert } from "@/components/ui";
 import { call, download } from "@/lib/engine-client";
 import { defaultSideName, makeItem, reportText } from "@/lib/report";
+import type { ExecPair } from "@/lib/email-html";
 import { useSide, type SideApi } from "@/lib/useSide";
 
 interface PairCfg {
@@ -58,6 +60,16 @@ export default function MultiPage() {
     [status, titles, pairs, count, d1.files, d2.files, d3.files, d4.files, d1.system, d2.system, d3.system, d4.system],
   );
   const text = reportText(items, totals);
+  const sideLabel = (i: number, si?: { system: string; files: string[] }) => {
+    const f = si?.files.length ? si.files : all[i].files.map((x) => x.info.name);
+    const sys = si?.system ?? all[i].system;
+    const file = f.length ? `${f[0]}${f.length > 1 ? ` +${f.length - 1} ไฟล์` : ""}` : "";
+    return !sys || sys === "OTHER" || sys === "อื่น ๆ" ? file || "-" : file ? `${sys} · ${file}` : sys;
+  };
+  const execPairs: ExecPair[] = results.map((p) => {
+    const m = status[p.id]!.meta!;
+    return { title: titleOf(p), sideA: sideLabel(p.a, m.info?.a), sideB: sideLabel(p.b, m.info?.b), keys: m.keys, fields: m.fields.map((f) => f.name), summary: m.summary };
+  });
 
   const setPair = (id: string, patch: Partial<PairCfg>) => setPairs((ps) => ps.map((p) => (p.id === id ? { ...p, ...patch } : p)));
 
@@ -271,7 +283,12 @@ export default function MultiPage() {
                 </tbody>
               </table>
             </div>
+            <div className="sec-sub" style={{ marginTop: 4 }}>📊 Dashboard สำหรับส่งผู้บริหาร</div>
+            <ExecDashboard pairs={execPairs} plainText={text} />
+            <details className="fold" style={{ marginTop: 14 }}>
+              <summary>📝 ข้อความรายงาน (แบบตัวอักษรล้วน)</summary>
             <textarea className="input" readOnly rows={Math.min(30, text.split("\n").length + 1)} style={{ width: "100%", fontFamily: "inherit", lineHeight: 1.5 }} value={text} onFocus={(e) => e.currentTarget.select()} aria-label="ข้อความรายงานรวม" />
+            </details>
             <div className="row" style={{ marginTop: 8 }}>
               <label className="row" style={{ gap: 6 }}>
                 <input type="checkbox" checked={totals} onChange={(e) => setTotals(e.target.checked)} />

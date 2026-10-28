@@ -1,4 +1,5 @@
 "use client";
+import { FieldCards } from "./FieldCards";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { call, download } from "@/lib/engine-client";
 import type { CompareMeta, StatusFilter } from "@/lib/engine.worker";
@@ -406,19 +407,7 @@ export function CompareStep(props: {
             <div className="bar" title={`Match Rate ${pct.toFixed(1)}%`}>
               <div style={{ width: `${pct}%` }} />
             </div>
-            {m.summary.perField.length > 0 && (
-              <div className="fchips">
-                <span className="muted">ผลต่างต่อฟิลด์:</span>
-                {m.summary.perField.map((f) => (
-                  <span className={`badge ${f.rowsDiff === 0 ? "ok" : "warn"}`} key={f.name} title={f.kind === "text" ? "ฟิลด์ข้อความ — นับจำนวนแถวที่ต่าง" : "ผลรวมของความต่าง (ค่าสัมบูรณ์)"}>
-                    {f.name}:{" "}
-                    {f.kind === "text"
-                      ? `${f.rowsDiff.toLocaleString()} แถวต่าง`
-                      : `Σ|diff| ${f.totalAbsDiff.toLocaleString(undefined, { maximumFractionDigits: 2 })}${f.kind === "date" ? " วัน" : ""} · ${f.rowsDiff.toLocaleString()} แถวต่าง`}
-                  </span>
-                ))}
-              </div>
-            )}
+            <FieldCards summary={m.summary} />
           </div>
 
           {!props.hideReport && (
