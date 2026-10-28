@@ -28,11 +28,19 @@ function fileList(files: string[]): string {
 /** สร้างไฟล์ Excel 6 sheet: Summary, All, Match, Mismatch, Missing A, Missing B */
 export async function buildResultWorkbook(res: CompareResult): Promise<ArrayBuffer> {
   const wb = new ExcelJS.Workbook();
+  addResultSheets(wb, res, "");
+  return (await wb.xlsx.writeBuffer()) as ArrayBuffer;
+}
+
+const sheetName = (prefix: string, name: string) => (prefix ? `${prefix} ${name}` : name).slice(0, 31);
+
+/** เพิ่มชีตของผลเทียบ 1 คู่ลงใน workbook (prefix ใช้แยกชื่อชีตเมื่อมีหลายคู่ เช่น "P1") */
+function addResultSheets(wb: ExcelJS.Workbook, res: CompareResult, prefix: string): void {
   const s = res.summary;
   const info = res.info;
   const pct = (n: number) => (s.total ? `${((n / s.total) * 100).toFixed(1)}%` : "0%");
 
-  const sum = wb.addWorksheet("Summary");
+  const sum = wb.addWorksheet(sheetName(prefix, "Summary"));
   sum.columns = [{ width: 22 }, { width: 18 }, { width: 62 }, { width: 14 }];
   const head = (cells: (string | number)[]) => {
     const r = sum.addRow(cells);
@@ -80,7 +88,7 @@ export async function buildResultWorkbook(res: CompareResult): Promise<ArrayBuff
   const diffIdx = res.fields.map((f) => (f.colDiff ? res.columns.indexOf(f.colDiff) : -1));
 
   const addSheet = (name: string, rows: Cell[][]) => {
-    const ws = wb.addWorksheet(name);
+    const ws = wb.addWorksheet(sheetName(prefix, name));
     ws.addRow(res.columns).font = { bold: true };
     ws.views = [{ state: "frozen", ySplit: 1 }];
     for (const r of rows) ws.addRow(r.map((v) => (v instanceof Date ? v.toISOString().slice(0, 10) : v ?? null)));
@@ -107,7 +115,43 @@ export async function buildResultWorkbook(res: CompareResult): Promise<ArrayBuff
 
   addSheet("All", res.rows);
   for (const st of STATUSES) addSheet(st, res.rows.filter((r) => r[res.statusCol] === st));
+}
 
-  const buf = await wb.xlsx.writeBuffer();
-  return buf as ArrayBuffer;
+/** Excel ไฟล์เดียวสำหรับหลายคู่: ชีต Overview (1 แถวต่อคู่) แล้วตามด้วยชีต P1…, P2… ของแต่ละคู่ */
+export async function buildMultiWorkbook(items: { title: string; res: CompareResult }[]): Promise<ArrayBuffer> {
+  const wb = new ExcelJS.Workbook();
+  const ov = wb.addWorksheet("Overview");
+  ov.columns = [{ width: 5 }, { width: 38 }, { width: 34 }, { width: 34 }, { width: 34 }, { width: 28 }, { width: 11 }, { width: 11 }, { width: 11 }, { width: 11 }, { width: 11 }, { width: 11 }, { width: 22 }];
+  ov.addRow(["LOD · Reconcile Tools — สรุปการเทียบหลายคู่"]).font = { bold: true, size: 14 };
+  const t0 = items.find((x) => x.res.info)?.res.info;
+  if (t0) ov.addRow(["สร้างเมื่อ", stamp(t0.generatedAt)]);
+  ov.addRow([]);
+  const h = ov.addRow(["#", "คู่ที่เทียบ", "ฝั่ง A (ระบบ · ไฟล์)", "ฝั่ง B (ระบบ · ไฟล์)", "Key Columns", "Compare Fields", "Total", "Match", "Mismatch", "Missing A", "Missing B", "Match %", "Status"]);
+  h.font = { bold: true };
+  items.forEach((it, i) => {
+    const s = it.res.summary;
+    const info = it.res.info;
+    const bad = s.mismatch + s.missingA + s.missingB;
+    const side = (x?: { system: string; files: string[] }) => (x ? `${x.system} · ${x.files.join(", ") || "-"}` : "-");
+    const r = ov.addRow([
+      i + 1,
+      it.title,
+      side(info?.a),
+      side(info?.b),
+      it.res.keys.join(", "),
+      it.res.fields.map((f) => f.name).join(", "),
+      s.total,
+      s.match,
+      s.mismatch,
+      s.missingA,
+      s.missingB,
+      s.total ? Number(((s.match / s.total) * 100).toFixed(2)) : 0,
+      bad === 0 ? "Match" : "Not Match",
+    ]);
+    r.alignment = { vertical: "top", wrapText: true };
+    r.getCell(13).font = { bold: true, color: { argb: bad === 0 ? "FF15803D" : "FFB91C1C" } };
+  });
+  ov.views = [{ state: "frozen", ySplit: 4 }];
+  items.forEach((it, i) => addResultSheets(wb, it.res, `P${i + 1}`));
+  return (await wb.xlsx.writeBuffer()) as ArrayBuffer;
 }

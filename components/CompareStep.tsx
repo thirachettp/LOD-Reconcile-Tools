@@ -42,7 +42,7 @@ function statusClass(s: string) {
   return "st-Missing";
 }
 
-function ResultTable({ meta }: { meta: CompareMeta }) {
+function ResultTable({ meta, pairId }: { meta: CompareMeta; pairId?: string }) {
   const [filter, setFilter] = useState<StatusFilter>("All");
   const [search, setSearch] = useState("");
   const [q, setQ] = useState("");
@@ -62,13 +62,13 @@ function ResultTable({ meta }: { meta: CompareMeta }) {
   useEffect(() => {
     let off = false;
     setLoading(true);
-    call("page", { filter, search: q, sortCol: sort?.col ?? null, sortDir: sort?.dir ?? "desc", offset: page * PAGE, limit: PAGE })
+    call("page", { pairId, filter, search: q, sortCol: sort?.col ?? null, sortDir: sort?.dir ?? "desc", offset: page * PAGE, limit: PAGE })
       .then((r) => !off && setData(r))
       .finally(() => !off && setLoading(false));
     return () => {
       off = true;
     };
-  }, [meta, filter, q, sort, page]);
+  }, [meta, filter, q, sort, page, pairId]);
 
   const s = meta.summary;
   const counts: Record<StatusFilter, number> = { All: s.total, Match: s.match, Mismatch: s.mismatch, "Missing A": s.missingA, "Missing B": s.missingB };
@@ -153,7 +153,7 @@ function ResultTable({ meta }: { meta: CompareMeta }) {
         <span className="spacer" />
         <button
           className="btn small"
-          onClick={async () => download(await call("exportCsv", { filter, search: q, sortCol: sort?.col ?? null, sortDir: sort?.dir ?? "desc" }), `Compare_${filter.replace(" ", "")}.csv`, "text/csv;charset=utf-8")}
+          onClick={async () => download(await call("exportCsv", { pairId, filter, search: q, sortCol: sort?.col ?? null, sortDir: sort?.dir ?? "desc" }), `Compare_${filter.replace(" ", "")}.csv`, "text/csv;charset=utf-8")}
         >
           📥 CSV (ตามตัวกรองปัจจุบัน)
         </button>
@@ -178,6 +178,9 @@ export function CompareStep(props: {
   onSel: (s: CompareSel) => void;
   report: ReportItem[];
   onReport: (r: ReportItem[]) => void;
+  /** โหมดหลายคู่: id ของคู่ และซ่อนการ์ดรายงานรายคู่ (ใช้รายงานรวมแทน) */
+  pairId?: string;
+  hideReport?: boolean;
 }) {
   const common = useMemo(() => props.stdColsA.filter((c) => props.stdColsB.includes(c)), [props.stdColsA, props.stdColsB]);
   const [keys, setKeys] = useState<string[]>([]);
@@ -218,6 +221,7 @@ export function CompareStep(props: {
     setRunning(true);
     try {
       const m = await call("compare", {
+        pairId: props.pairId,
         keys,
         fields: fields.filter((f) => !keys.includes(f)),
         opts: { fuzzyKeys: fuzzy, tolerance: Math.abs(Number(tol) || 0), tagA: props.tagA, tagB: props.tagB },
@@ -353,6 +357,7 @@ export function CompareStep(props: {
             </>
           )}
 
+          {!props.hideReport && (
           <ReportCard
             title={shownTitle}
             onTitle={(t) => {
@@ -368,14 +373,15 @@ export function CompareStep(props: {
             onRemove={(id) => props.onReport(props.report.filter((x) => x.id !== id))}
             onClear={() => props.onReport([])}
           />
+          )}
 
           <div className="card">
-            <ResultTable key={`${m.info?.generatedAt ?? ""}|${m.columns.join("|")}`} meta={m} />
+            <ResultTable pairId={props.pairId} key={`${m.info?.generatedAt ?? ""}|${m.columns.join("|")}`} meta={m} />
             <hr className="s" />
             <button
               className="btn primary"
               onClick={async () => {
-                const buf = await call("exportXlsx", undefined as never);
+                const buf = await call("exportXlsx", { pairId: props.pairId });
                 const d = new Date();
                 const stamp = `${String(d.getDate()).padStart(2, "0")}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getFullYear()).slice(2)}_${String(d.getHours()).padStart(2, "0")}${String(d.getMinutes()).padStart(2, "0")}`;
                 download(buf, `CompareStock_${stamp}.xlsx`, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");

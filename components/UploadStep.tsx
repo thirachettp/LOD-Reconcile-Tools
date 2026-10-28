@@ -7,11 +7,11 @@ import { Alert, PreviewTable, Spinner } from "./ui";
 
 const WARN_MB = 50;
 
-function UploadCard({ api }: { api: SideApi }) {
+export function UploadCard({ api }: { api: SideApi }) {
   const input = useRef<HTMLInputElement>(null);
   const [over, setOver] = useState(false);
   const totalMb = api.files.reduce((s, f) => s + f.info.size, 0) / 1048576;
-  const label = api.side.toUpperCase();
+  const label = api.label;
 
   return (
     <div className="card">

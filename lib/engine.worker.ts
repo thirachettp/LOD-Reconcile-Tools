@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 import { compareTables } from "./compare";
-import { buildResultWorkbook } from "./export-xlsx";
+import { buildMultiWorkbook, buildResultWorkbook } from "./export-xlsx";
 import { buildStandard } from "./formulas";
 import { dropFile, loadFile, readCombined, toCsv, type FileInfo, type SheetRequest } from "./io";
 import { isMissing, toNumber } from "./dates";
@@ -15,12 +15,44 @@ import type {
   Table,
 } from "./types";
 
-/** ข้อมูลทั้งหมดอยู่ใน worker — ฝั่ง UI ได้รับแค่ preview/สรุป เพื่อรองรับไฟล์ใหญ่ */
-const state: {
-  raw: { a: Table | null; b: Table | null };
-  std: { a: Table | null; b: Table | null };
+/**
+ * ข้อมูลทั้งหมดอยู่ใน worker — ฝั่ง UI ได้รับแค่ preview/สรุป เพื่อรองรับไฟล์ใหญ่
+ * raw: ตารางดิบต่อชุดข้อมูล (id เช่น "a","b" หรือ "d1","d2","d3")
+ * pairs: คู่ที่เทียบกัน แต่ละคู่มี Standard Table และผลลัพธ์ของตัวเอง (โหมดปกติใช้ pair id "main")
+ */
+interface PairState {
+  dsA: string;
+  dsB: string;
+  a: Table | null;
+  b: Table | null;
   result: CompareResult | null;
-} = { raw: { a: null, b: null }, std: { a: null, b: null }, result: null };
+}
+const state: { raw: Record<string, Table | null>; pairs: Record<string, PairState> } = { raw: {}, pairs: {} };
+
+const MAIN = "main";
+
+function pairOf(id: string | undefined): PairState {
+  const p = state.pairs[id ?? MAIN];
+  if (!p) throw new Error("ยังไม่ได้ Build Standard Tables ของคู่นี้");
+  return p;
+}
+
+function resultOf(id: string | undefined): CompareResult {
+  const r = state.pairs[id ?? MAIN]?.result;
+  if (!r) throw new Error("ยังไม่มีผล Compare");
+  return r;
+}
+
+/** ข้อมูลของชุดนี้เปลี่ยน → ล้าง Standard Table/ผลของทุกคู่ที่ใช้ชุดนี้ */
+function invalidateDataset(ds: string) {
+  for (const p of Object.values(state.pairs)) {
+    if (p.dsA === ds || p.dsB === ds) {
+      p.a = null;
+      p.b = null;
+      p.result = null;
+    }
+  }
+}
 
 export interface TableMeta {
   columns: string[];
@@ -43,6 +75,7 @@ export interface PageQuery {
   sortDir: "asc" | "desc";
   offset: number;
   limit: number;
+  pairId?: string;
 }
 
 export interface CompareMeta {
@@ -57,7 +90,7 @@ export interface CompareMeta {
 }
 
 function filteredRows(q: Omit<PageQuery, "offset" | "limit">): Cell[][] {
-  const res = state.result;
+  const res = state.pairs[q.pairId ?? MAIN]?.result;
   if (!res) return [];
   let rows = res.rows;
   if (q.filter !== "All") rows = rows.filter((r) => r[res.statusCol] === q.filter);
@@ -92,6 +125,19 @@ function filteredRows(q: Omit<PageQuery, "offset" | "limit">): Cell[][] {
   return rows;
 }
 
+function toMeta(res: CompareResult): CompareMeta {
+  return {
+    columns: res.columns,
+    keys: res.keys,
+    fields: res.fields,
+    statusCol: res.statusCol,
+    mismatchedCol: res.mismatchedCol,
+    summary: res.summary,
+    notes: res.notes,
+    info: res.info,
+  };
+}
+
 const handlers = {
   async loadFile(p: { id: string; name: string; size: number; buf: ArrayBuffer }): Promise<FileInfo> {
     return loadFile(p.id, p.name, p.size, p.buf);
@@ -99,14 +145,13 @@ const handlers = {
   async dropFile(p: { id: string }) {
     dropFile(p.id);
   },
-  async combine(p: { side: "a" | "b"; reqs: SheetRequest[] }) {
+  async combine(p: { side: string; reqs: SheetRequest[] }) {
     const { table, errors } = readCombined(p.reqs);
     state.raw[p.side] = p.reqs.length ? table : null;
-    state.std = { a: null, b: null };
-    state.result = null;
+    invalidateDataset(p.side);
     return { meta: p.reqs.length ? meta(table, 10) : null, errors };
   },
-  async distinct(p: { side: "a" | "b"; column: string; limit: number }) {
+  async distinct(p: { side: string; column: string; limit: number }) {
     const t = state.raw[p.side];
     if (!t) return [] as string[];
     const idx = t.columns.indexOf(p.column);
@@ -120,48 +165,48 @@ const handlers = {
     }
     return Array.from(set).sort();
   },
-  async build(p: { rows: MappingRow[]; labelA: string; labelB: string }) {
-    if (!state.raw.a || !state.raw.b) throw new Error("กรุณาอัปโหลดและรวมไฟล์ทั้งสองฝั่งก่อน");
-    const a = buildStandard(state.raw.a, p.rows, "a", p.labelA);
-    const b = buildStandard(state.raw.b, p.rows, "b", p.labelB);
-    state.std = { a: a.table, b: b.table };
-    state.result = null;
+  /** Build Standard Table ของคู่ (dsA/dsB = ชุดข้อมูลที่ใช้; ค่าเริ่มต้น a/b และ pair "main") */
+  async build(p: { rows: MappingRow[]; labelA: string; labelB: string; pairId?: string; dsA?: string; dsB?: string }) {
+    const dsA = p.dsA ?? "a";
+    const dsB = p.dsB ?? "b";
+    const rawA = state.raw[dsA];
+    const rawB = state.raw[dsB];
+    if (!rawA || !rawB) throw new Error("กรุณาอัปโหลดและรวมไฟล์ทั้งสองฝั่งก่อน");
+    const a = buildStandard(rawA, p.rows, "a", p.labelA);
+    const b = buildStandard(rawB, p.rows, "b", p.labelB);
+    state.pairs[p.pairId ?? MAIN] = { dsA, dsB, a: a.table, b: b.table, result: null };
     return { a: meta(a.table, 50), b: meta(b.table, 50), warnings: [...a.warnings, ...b.warnings] };
   },
-  async compare(p: { keys: string[]; fields: string[]; opts: CompareOptions; info: RunInfo }): Promise<CompareMeta> {
-    if (!state.std.a || !state.std.b) throw new Error("กรุณา Build Standard Tables ก่อน");
-    const res = compareTables(state.std.a, state.std.b, p.keys, p.fields, p.opts);
+  async compare(p: { keys: string[]; fields: string[]; opts: CompareOptions; info: RunInfo; pairId?: string }): Promise<CompareMeta> {
+    const pr = state.pairs[p.pairId ?? MAIN];
+    if (!pr || !pr.a || !pr.b) throw new Error("กรุณา Build Standard Tables ก่อน");
+    const res = compareTables(pr.a, pr.b, p.keys, p.fields, p.opts);
     res.info = p.info;
-    state.result = res;
-    return {
-      columns: res.columns,
-      keys: res.keys,
-      fields: res.fields,
-      statusCol: res.statusCol,
-      mismatchedCol: res.mismatchedCol,
-      summary: res.summary,
-      notes: res.notes,
-      info: res.info,
-    };
+    pr.result = res;
+    return toMeta(res);
   },
   async page(q: PageQuery) {
     const rows = filteredRows(q);
     return { total: rows.length, rows: rows.slice(q.offset, q.offset + q.limit) };
   },
-  async exportXlsx(): Promise<ArrayBuffer> {
-    if (!state.result) throw new Error("ยังไม่มีผล Compare");
-    return buildResultWorkbook(state.result);
+  async exportXlsx(p?: { pairId?: string }): Promise<ArrayBuffer> {
+    return buildResultWorkbook(resultOf(p?.pairId));
+  },
+  /** Excel ไฟล์เดียวรวมหลายคู่: Overview + ชีตของแต่ละคู่ */
+  async exportMulti(p: { pairs: { id: string; title: string }[] }): Promise<ArrayBuffer> {
+    const items = p.pairs.map((x) => ({ title: x.title, res: resultOf(x.id) }));
+    return buildMultiWorkbook(items);
   },
   async exportCsv(q: Omit<PageQuery, "offset" | "limit">): Promise<string> {
-    if (!state.result) throw new Error("ยังไม่มีผล Compare");
-    return toCsv(state.result.columns, filteredRows(q));
+    const r = resultOf(q.pairId);
+    return toCsv(r.columns, filteredRows(q));
   },
-  async exportStd(p: { side: "a" | "b" }): Promise<string> {
-    const t = state.std[p.side];
+  async exportStd(p: { side: "a" | "b"; pairId?: string }): Promise<string> {
+    const t = pairOf(p.pairId)[p.side];
     if (!t) throw new Error("ยังไม่ได้ Build");
     return toCsv(t.columns, t.rows);
   },
-  async exportRaw(p: { side: "a" | "b" }): Promise<string> {
+  async exportRaw(p: { side: string }): Promise<string> {
     const t = state.raw[p.side];
     if (!t) throw new Error("ยังไม่มีข้อมูล");
     return toCsv(t.columns, t.rows);

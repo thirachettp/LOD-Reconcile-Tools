@@ -218,3 +218,6 @@ table.tbl { border-collapse: collapse; min-width: 100%; width: max-content; font
 .sumif-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; align-items: start; }
 .sumif-grid .f { font-size: 12px; font-weight: 600; color: var(--text-secondary); display: grid; gap: 3px; min-width: 0; }
 @media (max-width: 1100px) { .sumif-a, .sumif-b { grid-column: 1 / -1; grid-row: auto; } }
+.multi-ds { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 16px; align-items: start; margin-bottom: 8px; }
+.multi-ds > * { min-width: 0; margin-bottom: 0; }
+a.btn { text-decoration: none; display: inline-block; }

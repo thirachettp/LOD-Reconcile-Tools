@@ -15,7 +15,10 @@ export interface FileState {
 export const sheetKey = (s: string | null) => s ?? "__csv";
 
 export interface SideApi {
-  side: "a" | "b";
+  /** รหัสชุดข้อมูลใน worker เช่น "a","b" หรือ "d1" */
+  side: string;
+  /** ชื่อที่แสดงตอนยังไม่มีไฟล์ เช่น "A" หรือ "ชุด 1" */
+  label: string;
   system: SystemCode;
   autoDetected: boolean;
   setSystem: (s: SystemCode) => void;
@@ -41,7 +44,7 @@ export interface SideSnapshot {
 
 let fileSeq = 0;
 
-export function useSide(side: "a" | "b", initial: SystemCode, onChanged: () => void): SideApi {
+export function useSide(side: string, initial: SystemCode, onChanged: () => void, label: string = side.toUpperCase()): SideApi {
   const [system, setSystemRaw] = useState<SystemCode>(initial);
   const [autoDetected, setAuto] = useState(false);
   const manual = useRef(false);
@@ -157,12 +160,12 @@ export function useSide(side: "a" | "b", initial: SystemCode, onChanged: () => v
   const names = files.map((f) => f.info.name);
   const displayName =
     names.length === 0
-      ? side.toUpperCase()
+      ? label
       : names.length === 1
         ? names[0].length > 40
           ? names[0].slice(0, 37) + "…"
           : names[0]
         : `${names[0].length > 26 ? names[0].slice(0, 23) + "…" : names[0]} +${names.length - 1} ไฟล์`;
 
-  return { side, system, autoDetected, setSystem, files, table, busy, errors, addFiles, removeFile, updateFile, reset, displayName, snapshot, restore };
+  return { side, label, system, autoDetected, setSystem, files, table, busy, errors, addFiles, removeFile, updateFile, reset, displayName, snapshot, restore };
 }

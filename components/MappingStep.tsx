@@ -74,12 +74,15 @@ function SumifEditor({
   cfg,
   cols,
   side,
+  ds,
   hints,
   onChange,
 }: {
   cfg: SideCfg;
   cols: string[];
   side: "a" | "b";
+  /** รหัสชุดข้อมูลใน worker ที่ใช้ดึงค่าตัวอย่าง */
+  ds: string;
   hints: Hints;
   onChange: (c: SideCfg) => void;
 }) {
@@ -97,13 +100,13 @@ function SumifEditor({
       setVals(undefined);
       return;
     }
-    call("distinct", { side, column: crit, limit: 200 })
+    call("distinct", { side: ds, column: crit, limit: 200 })
       .then((v) => !off && setVals(v))
       .catch(() => !off && setVals(undefined));
     return () => {
       off = true;
     };
-  }, [crit, side, noValue, cols]);
+  }, [crit, ds, noValue, cols]);
 
   return (
     <div className="sumif-panel">
@@ -442,6 +445,10 @@ export function MappingStep(props: {
   error: string | null;
   onBuild: () => void;
   onBack: () => void;
+  /** โหมดหลายคู่: id ของคู่และชุดข้อมูลที่ใช้ (ค่าเริ่มต้น main / a / b) */
+  pairId?: string;
+  dsA?: string;
+  dsB?: string;
 }) {
   const { rows } = props;
   const colsA = useMemo(() => props.tableA?.columns ?? [], [props.tableA]);
@@ -529,12 +536,12 @@ export function MappingStep(props: {
             </button>
             {r.a.function === "SUMIF" && (
               <div className="sumif-slot sumif-a">
-                <SumifEditor cfg={r.a} cols={colsA} side="a" hints={hintsA} onChange={(c) => patch(r.id, (x) => ({ ...x, a: c }))} />
+                <SumifEditor cfg={r.a} cols={colsA} side="a" ds={props.dsA ?? "a"} hints={hintsA} onChange={(c) => patch(r.id, (x) => ({ ...x, a: c }))} />
               </div>
             )}
             {r.b.function === "SUMIF" && (
               <div className="sumif-slot sumif-b">
-                <SumifEditor cfg={r.b} cols={colsB} side="b" hints={hintsB} onChange={(c) => patch(r.id, (x) => ({ ...x, b: c }))} />
+                <SumifEditor cfg={r.b} cols={colsB} side="b" ds={props.dsB ?? "b"} hints={hintsB} onChange={(c) => patch(r.id, (x) => ({ ...x, b: c }))} />
               </div>
             )}
           </div>
@@ -604,7 +611,7 @@ export function MappingStep(props: {
                   <button
                     className="btn small"
                     style={{ marginTop: 8 }}
-                    onClick={async () => download(await call("exportStd", { side: s }), `Standard_${s.toUpperCase()}.csv`, "text/csv;charset=utf-8")}
+                    onClick={async () => download(await call("exportStd", { side: s, pairId: props.pairId }), `Standard_${s.toUpperCase()}.csv`, "text/csv;charset=utf-8")}
                   >
                     📥 Export CSV
                   </button>
