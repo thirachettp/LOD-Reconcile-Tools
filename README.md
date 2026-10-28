@@ -27,6 +27,18 @@
 3. แต่ละคู่มี Mapping / Key / Compare Fields และ Standard Table ของตัวเอง (โหลด Mapping ที่บันทึกไว้ได้)
 4. สรุปรวมทุกคู่เป็นข้อความรายงานคัดลอกได้ และ Export Excel ไฟล์เดียว (ชีต Overview + P1…, P2… ของแต่ละคู่)
 
+## คลัง Template ของทีม (บันทึกบนเซิร์ฟเวอร์)
+
+Mapping ที่ตั้งชื่อไว้บันทึกได้ 2 ที่: **ทีม** (บนเซิร์ฟเวอร์ ทุกคนเห็นชุดเดียวกัน) หรือ **เครื่องนี้** (เบราว์เซอร์ของตัวเอง) — เก็บเฉพาะสูตร + Key/Compare Fields ไม่เก็บข้อมูลในไฟล์ ไฟล์ยังถูกประมวลผลในเบราว์เซอร์เหมือนเดิม
+
+ตั้งค่าครั้งเดียวบน Vercel (ถ้ายังไม่ตั้ง ระบบใช้ได้ตามปกติ แต่บันทึกได้เฉพาะ “เครื่องนี้”):
+
+1. Vercel → โปรเจกต์ → **Storage** → Create / Marketplace → **Upstash Redis** (เลือก region **Singapore**) แล้ว Connect to Project — Vercel จะเพิ่มตัวแปร `KV_REST_API_URL` และ `KV_REST_API_TOKEN` (หรือ `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`) ให้เอง
+2. Settings → **Environment Variables** → เพิ่ม `TEAM_PASSCODE` = รหัสผ่านของทีม (ตั้งยาวๆ เดายาก)
+3. **Redeploy** แล้วเปิดหน้า Mapping → ช่อง “คลังของทีม” → ใส่รหัสผ่าน → เชื่อมต่อ (เบราว์เซอร์จะจำรหัสไว้)
+
+หมายเหตุ: รหัสผ่านทีมคุมการอ่าน/เขียน Template เท่านั้น ถ้าต้องการจำกัดคนเปิดเว็บทั้งหมด ให้เปิด Vercel Authentication / Password Protection ของโปรเจกต์เพิ่ม · ถ้าสองคนแก้ Template เดียวกัน ระบบจะแจ้งว่ามีคนแก้ไปก่อนและไม่เขียนทับเงียบๆ
+
 ## ชุดสูตรตั้งต้น
 
 | ระบบ | SKU | Location | Qty (SUM) | BBDate (MIN) |

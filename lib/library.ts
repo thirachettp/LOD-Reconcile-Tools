@@ -15,6 +15,8 @@ export interface SavedMapping {
   compareFields?: string[];
   updatedAt: number;
   builtin?: boolean;
+  /** คลังทีม: ชื่อผู้บันทึกล่าสุด */
+  updatedBy?: string;
 }
 
 export class NameTakenError extends Error {

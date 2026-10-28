@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CompareStep, type CompareSel } from "./CompareStep";
-import { MappingStep, type BuildInfo, type LibraryApi, type SaveResult } from "./MappingStep";
+import { MappingStep, type BuildInfo, type LibraryApi, type LibraryCurrent, type SaveResult } from "./MappingStep";
 import { call, download } from "@/lib/engine-client";
 import type { CompareMeta } from "@/lib/engine.worker";
 import {
@@ -17,6 +17,7 @@ import {
 import { exportMapping, importMapping } from "@/lib/mapping-io";
 import { buildPreset, fitRowsToColumns } from "@/lib/presets";
 import type { ReportItem } from "@/lib/report";
+import { getAuthor, lockTeam, refreshTeam, setAuthor, teamDelete, teamRename, teamSave, unlockTeam, useTeam } from "@/lib/team-client";
 import type { SideApi } from "@/lib/useSide";
 import { SYSTEMS, SYSTEM_LABELS, type MappingRow, type SideInfo, type SystemCode } from "@/lib/types";
 
@@ -116,7 +117,7 @@ export function PairWorkspace({
   const [rows, setRows] = useState<MappingRow[]>(() => buildPreset("FC", "JDA").rows);
   const [touched, setTouched] = useState(false);
   const [saved, setSaved] = useState<SavedMapping[]>([]);
-  const [current, setCurrent] = useState<{ id: string; name: string; builtin?: boolean } | null>(null);
+  const [current, setCurrent] = useState<LibraryCurrent | null>(null);
   const [dirty, setDirty] = useState(false);
   const [cmp, setCmp] = useState<CompareSel>({});
   const [cmpVersion, setCmpVersion] = useState(0);
@@ -195,20 +196,45 @@ export function PairWorkspace({
 
   const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
+  const team = useTeam();
   const lib: LibraryApi = {
     saved,
+    team: team.items,
+    teamStatus: { state: team.state, message: team.message },
     builtins: BUILTIN_MAPPINGS,
     current,
     dirty,
     onLoad: (id) => {
       if (!id) return resetPreset();
-      const m = [...BUILTIN_MAPPINGS, ...saved].find((x) => x.id === id);
-      if (m) applyMapping(m, { id: m.id, name: m.name, builtin: m.builtin });
+      const b = BUILTIN_MAPPINGS.find((x) => x.id === id);
+      const t = team.items.find((x) => x.id === id);
+      const l = saved.find((x) => x.id === id);
+      const m = b ?? t ?? l;
+      if (m) applyMapping(m, { id: m.id, name: m.name, builtin: m.builtin, scope: t ? "team" : l ? "local" : undefined, updatedAt: m.updatedAt });
     },
-    onSave: (name, { asNew, overwrite }): SaveResult => {
+    onSave: async (name, { asNew, overwrite, scope }): Promise<SaveResult> => {
+      const keepCurrent = !asNew && !!current && !current.builtin;
+      const target = keepCurrent ? current!.scope ?? "local" : scope ?? "local";
+      if (target === "team") {
+        const r = await teamSave({
+          id: keepCurrent ? current!.id : undefined,
+          name,
+          sysA: a.system,
+          sysB: b.system,
+          rows,
+          compareKeys: cmp.keys,
+          compareFields: cmp.fields,
+          overwrite,
+          expectedUpdatedAt: keepCurrent ? current!.updatedAt : undefined,
+        });
+        if (!r.ok) return { ok: false, taken: r.taken, error: r.error };
+        setCurrent({ id: r.item.id, name: r.item.name, scope: "team", updatedAt: r.item.updatedAt });
+        setDirty(false);
+        return { ok: true };
+      }
       try {
         const item = saveMapping({
-          id: !asNew && current && !current.builtin ? current.id : undefined,
+          id: keepCurrent ? current!.id : undefined,
           name,
           sysA: a.system,
           sysB: b.system,
@@ -218,34 +244,47 @@ export function PairWorkspace({
           overwrite,
         });
         setSaved(listSaved());
-        setCurrent({ id: item.id, name: item.name });
+        setCurrent({ id: item.id, name: item.name, scope: "local", updatedAt: item.updatedAt });
         setDirty(false);
         return { ok: true };
       } catch (e) {
         return { ok: false, taken: e instanceof NameTakenError, error: errText(e) };
       }
     },
-    onRename: (name): SaveResult => {
-      if (!current || current.builtin) return { ok: false, error: "เปลี่ยนชื่อได้เฉพาะ Mapping ที่บันทึกไว้เอง" };
+    onRename: async (name): Promise<SaveResult> => {
+      if (!current || current.builtin) return { ok: false, error: "เปลี่ยนชื่อได้เฉพาะ Template ที่บันทึกไว้เอง" };
+      if (current.scope === "team") {
+        const r = await teamRename(current.id, name, current.updatedAt);
+        if (!r.ok) return { ok: false, taken: r.taken, error: r.error };
+        setCurrent({ id: r.item.id, name: r.item.name, scope: "team", updatedAt: r.item.updatedAt });
+        return { ok: true };
+      }
       try {
         const item = renameMapping(current.id, name);
         setSaved(listSaved());
-        setCurrent({ id: item.id, name: item.name });
+        setCurrent({ id: item.id, name: item.name, scope: "local", updatedAt: item.updatedAt });
         return { ok: true };
       } catch (e) {
         return { ok: false, taken: e instanceof NameTakenError, error: errText(e) };
       }
     },
-    onDelete: () => {
-      if (!current || current.builtin) return;
-      try {
-        deleteMapping(current.id);
-      } catch {
-        /* noop */
+    onDelete: async () => {
+      if (!current || current.builtin) return null;
+      if (current.scope === "team") {
+        const msg = await teamDelete(current.id);
+        if (msg) return msg;
+      } else {
+        try {
+          deleteMapping(current.id);
+        } catch {
+          /* noop */
+        }
+        setSaved(listSaved());
       }
-      setSaved(listSaved());
       resetPreset();
+      return null;
     },
+    teamActions: { unlock: unlockTeam, lock: lockTeam, refresh: () => void refreshTeam(), getAuthor, setAuthor },
   };
 
   const [building, setBuilding] = useState(false);

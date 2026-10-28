@@ -233,16 +233,101 @@ export interface BuildInfo {
 
 export type SaveResult = { ok: true } | { ok: false; taken?: boolean; error: string };
 
+export interface LibraryCurrent {
+  id: string;
+  name: string;
+  builtin?: boolean;
+  /** team = คลังของทีมบนเซิร์ฟเวอร์, local = เฉพาะเบราว์เซอร์นี้ */
+  scope?: "team" | "local";
+  updatedAt?: number;
+}
+
 export interface LibraryApi {
   saved: SavedMapping[];
+  team: SavedMapping[];
+  teamStatus: { state: "unknown" | "loading" | "off" | "locked" | "ready" | "error"; message?: string };
   builtins: SavedMapping[];
-  current: { id: string; name: string; builtin?: boolean } | null;
+  current: LibraryCurrent | null;
   dirty: boolean;
   /** id = "" → กลับไปใช้สูตรตั้งต้นของคู่ระบบ */
   onLoad: (id: string) => void;
-  onSave: (name: string, o: { asNew: boolean; overwrite?: boolean }) => SaveResult;
-  onRename: (name: string) => SaveResult;
-  onDelete: () => void;
+  onSave: (name: string, o: { asNew: boolean; overwrite?: boolean; scope?: "team" | "local" }) => Promise<SaveResult>;
+  onRename: (name: string) => Promise<SaveResult>;
+  /** คืนข้อความผิดพลาด หรือ null เมื่อสำเร็จ */
+  onDelete: () => Promise<string | null>;
+  teamActions: {
+    unlock: (pass: string) => Promise<string | null>;
+    lock: () => void;
+    refresh: () => void;
+    getAuthor: () => string;
+    setAuthor: (n: string) => void;
+  };
+}
+
+function fmtWhen(ts: number): string {
+  const d = new Date(ts);
+  const p2 = (n: number) => String(n).padStart(2, "0");
+  return `${p2(d.getDate())}/${p2(d.getMonth() + 1)}/${d.getFullYear()} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
+}
+
+/** แถบเชื่อมต่อคลังของทีม: ใส่รหัสผ่าน / สถานะ / ชื่อผู้บันทึก */
+function TeamBar({ lib }: { lib: LibraryApi }) {
+  const t = lib.teamStatus;
+  const [pass, setPass] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [author, setAuthorText] = useState("");
+  useEffect(() => setAuthorText(lib.teamActions.getAuthor()), [lib.teamActions]);
+
+  if (t.state === "unknown" || t.state === "loading") return <div className="muted" style={{ marginTop: 8 }}>👥 กำลังเชื่อมต่อคลังของทีม…</div>;
+  if (t.state === "off") {
+    return (
+      <div className="muted" style={{ marginTop: 8 }} title={t.message}>
+        👥 คลังของทีมยังไม่เปิดใช้ — ผู้ดูแลต้องตั้งค่าที่เก็บข้อมูลและรหัสผ่านบน Vercel (ดู README) · ระหว่างนี้บันทึกได้เฉพาะในเบราว์เซอร์นี้
+      </div>
+    );
+  }
+  if (t.state === "locked") {
+    const go = async () => {
+      setBusy(true);
+      setErr(await lib.teamActions.unlock(pass));
+      setBusy(false);
+    };
+    return (
+      <div className="lib-row" style={{ marginTop: 10 }}>
+        <span>👥 คลังของทีม:</span>
+        <input className="input" type="password" style={{ maxWidth: 220 }} placeholder="รหัสผ่านของทีม" value={pass} autoComplete="off" onChange={(e) => setPass(e.target.value)} onKeyDown={(e) => e.key === "Enter" && pass.trim() && go()} aria-label="รหัสผ่านของทีม" />
+        <button className="btn small primary" disabled={busy || !pass.trim()} onClick={go}>
+          🔑 เชื่อมต่อ
+        </button>
+        {(err ?? t.message) && <span className="muted" style={{ color: "var(--bad-text)" }}>{err ?? t.message}</span>}
+      </div>
+    );
+  }
+  return (
+    <div className="lib-row" style={{ marginTop: 10 }}>
+      <span className={`badge ${t.state === "error" ? "bad" : "ok"}`}>👥 {t.state === "error" ? "คลังทีมมีปัญหา" : `เชื่อมต่อคลังทีมแล้ว · ${lib.team.length} รายการ`}</span>
+      {t.state === "error" && <span className="muted">{t.message}</span>}
+      <input
+        className="input"
+        style={{ maxWidth: 200 }}
+        maxLength={40}
+        placeholder="ชื่อของคุณ (แสดงเป็นผู้แก้ไข)"
+        value={author}
+        aria-label="ชื่อผู้บันทึก"
+        onChange={(e) => {
+          setAuthorText(e.target.value);
+          lib.teamActions.setAuthor(e.target.value);
+        }}
+      />
+      <button className="btn small" onClick={lib.teamActions.refresh} title="โหลดรายการล่าสุดจากทีม">
+        🔄 รีเฟรช
+      </button>
+      <button className="btn small" onClick={lib.teamActions.lock} title="ลบรหัสผ่านออกจากเบราว์เซอร์นี้">
+        ออกจากคลังทีม
+      </button>
+    </div>
+  );
 }
 
 function LibraryCard({ lib, sysA, sysB, preset, touched, onImport, onExport }: {
@@ -257,10 +342,15 @@ function LibraryCard({ lib, sysA, sysB, preset, touched, onImport, onExport }: {
   const importRef = useRef<HTMLInputElement>(null);
   const [naming, setNaming] = useState<null | "new" | "rename">(null);
   const [nameText, setNameText] = useState("");
+  const [scope, setScope] = useState<"team" | "local">("local");
   const [taken, setTaken] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "bad" | "warn"; text: string } | null>(null);
   const cur = lib.current;
   const userSaved = !!cur && !cur.builtin;
+  const teamReady = lib.teamStatus.state === "ready";
+  const curTeamItem = cur?.scope === "team" ? lib.team.find((x) => x.id === cur.id) : undefined;
+  const where = (c: LibraryCurrent) => (c.scope === "team" ? "คลังทีม" : "เครื่องนี้");
 
   const clearUi = () => {
     setMsg(null);
@@ -273,32 +363,38 @@ function LibraryCard({ lib, sysA, sysB, preset, touched, onImport, onExport }: {
 
   const startNew = () => {
     setNameText(cur?.name ?? `${SYSTEM_LABELS[sysA]} vs ${SYSTEM_LABELS[sysB]}`);
+    setScope(teamReady ? "team" : "local");
     setTaken(false);
     setMsg(null);
     setNaming("new");
   };
 
-  const submit = (overwrite = false) => {
-    const res = naming === "rename" ? lib.onRename(nameText) : lib.onSave(nameText, { asNew: true, overwrite });
+  const submit = async (overwrite = false) => {
+    setBusy(true);
+    const res = naming === "rename" ? await lib.onRename(nameText) : await lib.onSave(nameText, { asNew: true, overwrite, scope });
+    setBusy(false);
     if (res.ok) {
+      const dest = naming === "rename" ? "" : scope === "team" ? " ไว้ในคลังของทีมแล้ว" : " ไว้ในเบราว์เซอร์นี้แล้ว";
       setNaming(null);
       setTaken(false);
-      setMsg({ kind: "ok", text: naming === "rename" ? `เปลี่ยนชื่อเป็น “${nameText.trim()}” แล้ว` : `บันทึก “${nameText.trim()}” ไว้ในเว็บแล้ว` });
+      setMsg({ kind: "ok", text: naming === "rename" ? `เปลี่ยนชื่อเป็น “${nameText.trim()}” แล้ว` : `บันทึก “${nameText.trim()}”${dest}` });
     } else {
       setTaken(!!res.taken && naming === "new");
       setMsg({ kind: res.taken ? "warn" : "bad", text: res.error });
     }
   };
 
-  const quickSave = () => {
+  const quickSave = async () => {
     if (!cur || cur.builtin) return startNew();
-    const res = lib.onSave(cur.name, { asNew: false });
-    setMsg(res.ok ? { kind: "ok", text: `บันทึกทับ “${cur.name}” แล้ว` } : { kind: "bad", text: res.error });
+    setBusy(true);
+    const res = await lib.onSave(cur.name, { asNew: false });
+    setBusy(false);
+    setMsg(res.ok ? { kind: "ok", text: `บันทึกทับ “${cur.name}” (${where(cur)}) แล้ว` } : { kind: "bad", text: res.error });
   };
 
   return (
     <div className="card">
-      <div className="card-label">💾 Mapping ที่บันทึกไว้ในเว็บ</div>
+      <div className="card-label">💾 Template / Mapping ที่บันทึกไว้</div>
       <div className="lib-row">
         <select className="select" value={cur?.id ?? ""} onChange={(e) => {
             clearUi();
@@ -315,8 +411,17 @@ function LibraryCard({ lib, sysA, sysB, preset, touched, onImport, onExport }: {
               ))}
             </optgroup>
           )}
+          {lib.team.length > 0 && (
+            <optgroup label="👥 คลังของทีม">
+              {sortPair(lib.team).map((m) => (
+                <option key={m.id} value={m.id}>
+                  {optLabel(m)}
+                </option>
+              ))}
+            </optgroup>
+          )}
           {lib.saved.length > 0 && (
-            <optgroup label="ที่ฉันบันทึกไว้">
+            <optgroup label="ที่ฉันบันทึกไว้ (เครื่องนี้)">
               {sortPair(lib.saved).map((m) => (
                 <option key={m.id} value={m.id}>
                   {optLabel(m)}
@@ -325,7 +430,7 @@ function LibraryCard({ lib, sysA, sysB, preset, touched, onImport, onExport }: {
             </optgroup>
           )}
         </select>
-        <button className="btn small primary" onClick={quickSave}>
+        <button className="btn small primary" disabled={busy} onClick={quickSave}>
           💾 {userSaved ? "บันทึกทับ" : "บันทึก"}
         </button>
         <button className="btn small" onClick={startNew}>
@@ -346,11 +451,11 @@ function LibraryCard({ lib, sysA, sysB, preset, touched, onImport, onExport }: {
             </button>
             <button
               className="btn small danger"
-              onClick={() => {
-                if (confirm(`ลบ Mapping “${cur!.name}” ออกจากเว็บ?`)) {
-                  clearUi();
-                  lib.onDelete();
-                }
+              onClick={async () => {
+                if (!confirm(`ลบ “${cur!.name}” ออกจาก${cur!.scope === "team" ? "คลังของทีม (ทุกคนจะไม่เห็นอีก)" : "เบราว์เซอร์นี้"}?`)) return;
+                clearUi();
+                const e = await lib.onDelete();
+                if (e) setMsg({ kind: "bad", text: e });
               }}
             >
               🗑 ลบ
@@ -384,22 +489,32 @@ function LibraryCard({ lib, sysA, sysB, preset, touched, onImport, onExport }: {
             style={{ maxWidth: 360 }}
             autoFocus
             maxLength={80}
-            placeholder="ตั้งชื่อ Mapping เช่น FC vs Initialstock"
+            placeholder="ตั้งชื่อ Template เช่น FC vs Initialstock"
             value={nameText}
             onChange={(e) => {
               setNameText(e.target.value);
               setTaken(false);
             }}
             onKeyDown={(e) => {
-              if (e.key === "Enter") submit();
+              if (e.key === "Enter") void submit();
               if (e.key === "Escape") setNaming(null);
             }}
           />
-          <button className="btn small primary" disabled={!nameText.trim()} onClick={() => submit()}>
+          {naming === "new" && (
+            <div className="seg" role="radiogroup" aria-label="บันทึกที่">
+              <button type="button" className={scope === "team" ? "on" : ""} disabled={!teamReady} title={teamReady ? "ทุกคนในทีมเห็นและใช้ได้" : "ต้องเชื่อมต่อคลังทีมก่อน"} onClick={() => setScope("team")}>
+                👥 ทีม
+              </button>
+              <button type="button" className={scope === "local" ? "on" : ""} onClick={() => setScope("local")}>
+                🖥 เครื่องนี้
+              </button>
+            </div>
+          )}
+          <button className="btn small primary" disabled={busy || !nameText.trim()} onClick={() => void submit()}>
             {naming === "rename" ? "เปลี่ยนชื่อ" : "บันทึก"}
           </button>
           {taken && (
-            <button className="btn small danger" onClick={() => submit(true)}>
+            <button className="btn small danger" disabled={busy} onClick={() => void submit(true)}>
               บันทึกทับชื่อเดิม
             </button>
           )}
@@ -410,17 +525,20 @@ function LibraryCard({ lib, sysA, sysB, preset, touched, onImport, onExport }: {
       )}
       {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
 
+      <TeamBar lib={lib} />
+
       <div className="row" style={{ marginTop: 10 }}>
         {cur ? (
-          <span className={`badge ${lib.dirty ? "warn" : "ok"}`}>{lib.dirty ? "แก้ไขแล้ว (ยังไม่ได้บันทึก)" : cur.builtin ? "ตัวอย่างในระบบ" : "บันทึกแล้ว"}</span>
+          <span className={`badge ${lib.dirty ? "warn" : "ok"}`}>{lib.dirty ? "แก้ไขแล้ว (ยังไม่ได้บันทึก)" : cur.builtin ? "ตัวอย่างในระบบ" : `บันทึกแล้ว · ${where(cur)}`}</span>
         ) : (
           <span className={`badge ${touched ? "warn" : "ok"}`}>{touched ? "กำหนดเอง (ยังไม่ได้ตั้งชื่อ)" : "สูตรตั้งต้น"}</span>
         )}
         <strong>{cur ? cur.name : preset.title}</strong>
+        {curTeamItem && <span className="muted">แก้ไขล่าสุด {fmtWhen(curTeamItem.updatedAt)}{curTeamItem.updatedBy ? ` โดย ${curTeamItem.updatedBy}` : ""}</span>}
       </div>
       {!cur && preset.note && <div className="muted" style={{ marginTop: 6 }}>ℹ️ {preset.note}</div>}
       <div className="muted" style={{ marginTop: 6 }}>
-        เก็บไว้ในเบราว์เซอร์นี้ (ไม่ส่งขึ้นเซิร์ฟเวอร์) — ใช้เบราว์เซอร์/เครื่องอื่นให้ “ส่งออกไฟล์” แล้ว “นำเข้าไฟล์” · Key และ Compare Fields ที่เลือกในขั้นตอน Compare จะถูกบันทึกไปด้วย
+        เก็บเฉพาะสูตร + Key/Compare Fields (ไม่เก็บข้อมูลในไฟล์) · “ทีม” = เก็บบนเซิร์ฟเวอร์ ทุกคนที่มีรหัสผ่านเห็นชุดเดียวกัน · “เครื่องนี้” = อยู่ในเบราว์เซอร์นี้เท่านั้น
       </div>
     </div>
   );
