@@ -26,6 +26,17 @@ export function UploadCard({ api }: { api: SideApi }) {
             </button>
           ))}
         </div>
+        {api.system === "OTHER" && (
+          <input
+            className="input"
+            style={{ width: 230 }}
+            maxLength={40}
+            placeholder="ชื่อระบบ เช่น WMS Sprint"
+            aria-label={`ชื่อระบบของ ${label}`}
+            value={api.customName}
+            onChange={(e) => api.setCustomName(e.target.value)}
+          />
+        )}
         {api.autoDetected && <span className="badge info" title="ตรวจจากหัวตารางของไฟล์ — กดเลือกระบบเองได้">ตรวจพบอัตโนมัติ</span>}
       </div>
 
@@ -199,7 +210,7 @@ export function UploadStep({ a, b, onSwap, onReset, onNext }: { a: SideApi; b: S
       <div className="row">
         {ready ? (
           <span className="badge ok">
-            ทั้งสองไฟล์พร้อมแล้ว · {a.system} ↔ {b.system}
+            ทั้งสองไฟล์พร้อมแล้ว · {a.sysName || a.system} ↔ {b.sysName || b.system}
           </span>
         ) : (
           <span className="muted">กรุณาอัปโหลดทั้งสองฝั่ง</span>

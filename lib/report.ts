@@ -1,4 +1,4 @@
-import type { CompareResult, SideInfo } from "./types";
+import type { CompareResult, RunInfo, SideInfo } from "./types";
 
 export interface ReportItem {
   id: string;
@@ -22,13 +22,22 @@ export function defaultSideName(side: SideInfo): string {
   return f ? f.replace(/\.[^.]+$/, "") : side.system || "-";
 }
 
-export function makeItem(res: Pick<CompareResult, "keys" | "fields" | "summary">, title: string): ReportItem {
+/** ชื่อฝั่ง A/B สำหรับสรุป: ใช้ระบบที่เลือก (หรือชื่อที่พิมพ์/ชื่อไฟล์); ถ้าสองฝั่งชื่อซ้ำกันใช้ A / B */
+export function sideNames(info?: Pick<RunInfo, "a" | "b"> | null): [string, string] {
+  if (!info) return ["A", "B"];
+  const a = defaultSideName(info.a);
+  const b = defaultSideName(info.b);
+  return !a || !b || a === "-" || b === "-" || a === b ? ["A", "B"] : [a, b];
+}
+
+export function makeItem(res: Pick<CompareResult, "keys" | "fields" | "summary"> & { info?: RunInfo | null }, title: string): ReportItem {
   const s = res.summary;
+  const [nA, nB] = sideNames(res.info);
   const bad = s.mismatch + s.missingA + s.missingB;
   const status =
     bad === 0
       ? "Match"
-      : `Not Match (Mismatch ${s.mismatch.toLocaleString()}, Missing A ${s.missingA.toLocaleString()}, Missing B ${s.missingB.toLocaleString()} จาก ${s.total.toLocaleString()} Key, Match ${s.total ? ((s.match / s.total) * 100).toFixed(2) : "0.00"} %)`;
+      : `Not Match (Mismatch ${s.mismatch.toLocaleString()}, Missing ${nA} ${s.missingA.toLocaleString()}, Missing ${nB} ${s.missingB.toLocaleString()} จาก ${s.total.toLocaleString()} Key, Match ${s.total ? ((s.match / s.total) * 100).toFixed(2) : "0.00"} %)`;
   const totals = [`Rows: ${s.rowsA.toLocaleString()} vs ${s.rowsB.toLocaleString()} (${pct(s.rowsA, s.rowsB)})`];
   for (const f of s.perField) {
     if (f.kind === "number") totals.push(`${f.name}: ${n(f.sumA)} vs ${n(f.sumB)} (${pct(f.sumA, f.sumB)})`);

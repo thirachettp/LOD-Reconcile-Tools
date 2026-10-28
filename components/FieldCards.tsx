@@ -24,8 +24,8 @@ export function FieldCards({ summary, labelA = "A", labelB = "B" }: { summary: C
               <div className="fcard-grid">
                 <div><div className="fcard-l">{labelA} รวม</div><div className="fcard-v">{fmt(f.sumA)}</div></div>
                 <div><div className="fcard-l">{labelB} รวม</div><div className="fcard-v">{fmt(f.sumB)}</div></div>
-                <div><div className="fcard-l">ผลต่าง A−B</div><div className={`fcard-v ${diff ? "neg" : "muted"}`}>{diff === null ? "-" : `${diff > 0 ? "+" : ""}${fmt(diff)}`}</div></div>
-                <div><div className="fcard-l">B ÷ A</div><div className="fcard-v">{f.sumA ? `${((f.sumB ?? 0) / f.sumA * 100).toFixed(2)} %` : "-"}</div></div>
+                <div><div className="fcard-l">ผลต่าง {labelA}−{labelB}</div><div className={`fcard-v ${diff ? "neg" : "muted"}`}>{diff === null ? "-" : `${diff > 0 ? "+" : ""}${fmt(diff)}`}</div></div>
+                <div><div className="fcard-l">{labelB} ÷ {labelA}</div><div className="fcard-v">{f.sumA ? `${((f.sumB ?? 0) / f.sumA * 100).toFixed(2)} %` : "-"}</div></div>
               </div>
             ) : (
               <div className="fcard-grid two">

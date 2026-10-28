@@ -6,7 +6,7 @@ import type { CompareMeta, StatusFilter } from "@/lib/engine.worker";
 import type { Cell, RunInfo, SideInfo } from "@/lib/types";
 import { Alert, ColumnPicker, Spinner, fmtCell } from "./ui";
 import { ReportCard } from "./ReportCard";
-import { defaultSideName, makeItem, type ReportItem } from "@/lib/report";
+import { defaultSideName, makeItem, sideNames, type ReportItem } from "@/lib/report";
 
 export interface CompareSel {
   keys?: string[];
@@ -290,6 +290,7 @@ export function CompareStep(props: {
   }, [keys, fields, fuzzy, tol, props]);
 
   const m = props.meta;
+  const [nA, nB] = sideNames(m?.info ?? { a: props.runInfo.a, b: props.runInfo.b });
   const autoTitle = `${defaultSideName(m?.info?.a ?? props.runInfo.a)} vs ${defaultSideName(m?.info?.b ?? props.runInfo.b)}`;
   const shownTitle = repTitleTouched ? repTitle : autoTitle;
   const pct = m && m.summary.total ? (m.summary.match / m.summary.total) * 100 : 0;
@@ -397,17 +398,17 @@ export function CompareStep(props: {
               </div>
               <div className="kpi miss">
                 <div className="kpi-v">{m.summary.missingA.toLocaleString()}</div>
-                <div className="kpi-l">Missing A</div>
+                <div className="kpi-l" title="Key ที่ไม่มีในฝั่ง A">Missing {nA}</div>
               </div>
               <div className="kpi miss">
                 <div className="kpi-v">{m.summary.missingB.toLocaleString()}</div>
-                <div className="kpi-l">Missing B</div>
+                <div className="kpi-l" title="Key ที่ไม่มีในฝั่ง B">Missing {nB}</div>
               </div>
             </div>
             <div className="bar" title={`Match Rate ${pct.toFixed(1)}%`}>
               <div style={{ width: `${pct}%` }} />
             </div>
-            <FieldCards summary={m.summary} />
+            <FieldCards summary={m.summary} labelA={nA} labelB={nB} />
           </div>
 
           {!props.hideReport && (

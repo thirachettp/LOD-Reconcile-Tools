@@ -22,6 +22,11 @@ export interface SideApi {
   system: SystemCode;
   autoDetected: boolean;
   setSystem: (s: SystemCode) => void;
+  /** ชื่อระบบที่ผู้ใช้พิมพ์เอง (ใช้เมื่อเลือก "อื่น ๆ") */
+  customName: string;
+  setCustomName: (s: string) => void;
+  /** ชื่อระบบที่ใช้แสดงในสรุป: FC/JDA/MHT หรือชื่อที่พิมพ์ ("" ถ้าเป็นอื่น ๆ และยังไม่ตั้งชื่อ) */
+  sysName: string;
   files: FileState[];
   table: TableMeta | null;
   busy: boolean;
@@ -37,6 +42,7 @@ export interface SideApi {
 
 export interface SideSnapshot {
   system: SystemCode;
+  customName?: string;
   autoDetected: boolean;
   manual: boolean;
   files: FileState[];
@@ -46,6 +52,7 @@ let fileSeq = 0;
 
 export function useSide(side: string, initial: SystemCode, onChanged: () => void, label: string = side.toUpperCase()): SideApi {
   const [system, setSystemRaw] = useState<SystemCode>(initial);
+  const [customName, setCustomName] = useState("");
   const [autoDetected, setAuto] = useState(false);
   const manual = useRef(false);
   const [files, setFiles] = useState<FileState[]>([]);
@@ -146,13 +153,14 @@ export function useSide(side: string, initial: SystemCode, onChanged: () => void
   }, [colsKey]);
 
   const snapshot = useCallback(
-    (): SideSnapshot => ({ system, autoDetected, manual: manual.current, files }),
-    [system, autoDetected, files],
+    (): SideSnapshot => ({ system, customName, autoDetected, manual: manual.current, files }),
+    [system, customName, autoDetected, files],
   );
   const restore = useCallback((s: SideSnapshot) => {
     manual.current = s.manual;
     setAuto(s.autoDetected);
     setSystemRaw(s.system);
+    setCustomName(s.customName ?? "");
     setFiles(s.files);
     if (s.files.length === 0) setTable(null);
   }, []);
@@ -167,5 +175,7 @@ export function useSide(side: string, initial: SystemCode, onChanged: () => void
           : names[0]
         : `${names[0].length > 26 ? names[0].slice(0, 23) + "…" : names[0]} +${names.length - 1} ไฟล์`;
 
-  return { side, label, system, autoDetected, setSystem, files, table, busy, errors, addFiles, removeFile, updateFile, reset, displayName, snapshot, restore };
+  const sysName = system === "OTHER" ? customName.trim() : system;
+
+  return { side, label, system, autoDetected, setSystem, customName, setCustomName, sysName, files, table, busy, errors, addFiles, removeFile, updateFile, reset, displayName, snapshot, restore };
 }

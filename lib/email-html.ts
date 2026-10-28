@@ -3,6 +3,9 @@ import type { CompareSummary } from "./types";
 /** ข้อมูลของหนึ่งคู่สำหรับ Dashboard ส่งผู้บริหาร */
 export interface ExecPair {
   title: string;
+  /** ชื่อฝั่งที่ใช้แทน A / B ในสรุป (ระบบที่เลือก) */
+  nameA: string;
+  nameB: string;
   sideA: string;
   sideB: string;
   keys: string[];
@@ -54,10 +57,10 @@ export function buildExecHtml(pairs: ExecPair[], opts: { heading?: string; date?
     .map((p, i) => {
       const s = p.summary;
       const r = rate(s.match, s.total);
-      return `<tr>${td(String(i + 1), "left")}${td(`<strong>${esc(p.title)}</strong>`, "left")}${td(n0(s.total))}${td(n0(s.mismatch), "right", s.mismatch ? `color:${C.warn};font-weight:700;` : "")}${td(n0(s.missingA), "right", s.missingA ? `color:${C.bad};font-weight:700;` : "")}${td(n0(s.missingB), "right", s.missingB ? `color:${C.bad};font-weight:700;` : "")}${td(`<div style="margin-bottom:3px;">${r.toFixed(2)}%</div>${bar(r, "90px")}`, "right")}${td(pill(okOf(p)), "center")}</tr>`;
+      return `<tr>${td(String(i + 1), "left")}${td(`<strong>${esc(p.title)}</strong>`, "left")}${td(n0(s.total))}${td(n0(s.mismatch), "right", s.mismatch ? `color:${C.warn};font-weight:700;` : "")}${td(`${esc(p.nameA)} <strong>${n0(s.missingA)}</strong><br>${esc(p.nameB)} <strong>${n0(s.missingB)}</strong>`, "left", s.missingA + s.missingB ? `color:${C.bad};` : `color:${C.mute};`)}${td(`<div style="margin-bottom:3px;">${r.toFixed(2)}%</div>${bar(r, "90px")}`, "right")}${td(pill(okOf(p)), "center")}</tr>`;
     })
     .join("");
-  const overview = `<tr><td style="padding:10px 14px 4px;background:${C.bg};"><div style="font-size:14px;font-weight:700;color:${C.ink};margin:6px 0;">ภาพรวมทุกคู่</div><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;background:#fff;border:1px solid ${C.line};"><tr>${th("#", "left")}${th("คู่ที่เทียบ", "left")}${th("Total Key")}${th("Mismatch")}${th("Missing A")}${th("Missing B")}${th("Match %")}${th("Status", "center")}</tr>${overviewRows}</table></td></tr>`;
+  const overview = `<tr><td style="padding:10px 14px 4px;background:${C.bg};"><div style="font-size:14px;font-weight:700;color:${C.ink};margin:6px 0;">ภาพรวมทุกคู่</div><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;background:#fff;border:1px solid ${C.line};"><tr>${th("#", "left")}${th("คู่ที่เทียบ", "left")}${th("Total Key")}${th("Mismatch")}${th("Missing", "left")}${th("Match %")}${th("Status", "center")}</tr>${overviewRows}</table></td></tr>`;
 
   const details = pairs
     .map((p, i) => {
@@ -75,18 +78,18 @@ export function buildExecHtml(pairs: ExecPair[], opts: { heading?: string; date?
       ].join("");
       return `<tr><td style="padding:10px 14px 4px;background:${C.bg};"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;background:#fff;border:1px solid ${C.line};border-left:4px solid ${ok ? "#16a34a" : "#dc2626"};"><tr><td style="padding:12px 14px;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="font-size:15px;font-weight:700;color:${C.ink};">${i + 1}. ${esc(p.title)}</td><td align="right">${pill(ok)}</td></tr></table>
-<div style="font-size:12px;color:${C.mute};margin:4px 0;">A: ${esc(p.sideA)} &nbsp;|&nbsp; B: ${esc(p.sideB)}</div>
+<div style="font-size:12px;color:${C.mute};margin:4px 0;">${esc(p.nameA)}: ${esc(p.sideA)} &nbsp;|&nbsp; ${esc(p.nameB)}: ${esc(p.sideB)}</div>
 <div style="font-size:12px;color:${C.ink};">Keys : ${esc(p.keys.join(", "))}</div>
 <div style="font-size:12px;color:${C.ink};margin-bottom:8px;">Compare : ${esc(p.fields.join(", ") || "-")}</div>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:4px;"><tr><td style="font-size:12px;color:${C.mute};">Match ${n0(s.match)} จาก ${n0(s.total)} Key</td><td align="right" style="font-size:12px;font-weight:700;color:${C.ink};">${r.toFixed(2)}%</td></tr></table>
 ${bar(r)}
-<div style="font-size:12px;margin:8px 0;color:${C.ink};">Mismatch <strong style="color:${s.mismatch ? C.warn : C.mute};">${n0(s.mismatch)}</strong> &nbsp;·&nbsp; Missing A <strong style="color:${s.missingA ? C.bad : C.mute};">${n0(s.missingA)}</strong> &nbsp;·&nbsp; Missing B <strong style="color:${s.missingB ? C.bad : C.mute};">${n0(s.missingB)}</strong></div>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;"><tr>${th("ฟิลด์", "left")}${th("A รวม")}${th("B รวม")}${th("ผลต่าง (A−B)")}${th("B ÷ A")}${th("ผลการเทียบ")}</tr>${fieldRows}</table>
+<div style="font-size:12px;margin:8px 0;color:${C.ink};">Mismatch <strong style="color:${s.mismatch ? C.warn : C.mute};">${n0(s.mismatch)}</strong> &nbsp;·&nbsp; Missing ${esc(p.nameA)} <strong style="color:${s.missingA ? C.bad : C.mute};">${n0(s.missingA)}</strong> &nbsp;·&nbsp; Missing ${esc(p.nameB)} <strong style="color:${s.missingB ? C.bad : C.mute};">${n0(s.missingB)}</strong></div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;"><tr>${th("ฟิลด์", "left")}${th(`${esc(p.nameA)} รวม`)}${th(`${esc(p.nameB)} รวม`)}${th(`ผลต่าง (${esc(p.nameA)}−${esc(p.nameB)})`)}${th(`${esc(p.nameB)} ÷ ${esc(p.nameA)}`)}${th("ผลการเทียบ")}</tr>${fieldRows}</table>
 </td></tr></table></td></tr>`;
     })
     .join("");
 
-  const foot = `<tr><td style="padding:10px 22px 16px;background:${C.bg};font-size:11px;color:${C.mute};">สร้างจาก LOD · Reconcile Tools — Match % = จำนวน Key ที่ตรงทั้งหมด ÷ จำนวน Key ทั้งหมด · B ÷ A = ยอดรวมฝั่ง B เทียบกับฝั่ง A</td></tr>`;
+  const foot = `<tr><td style="padding:10px 22px 16px;background:${C.bg};font-size:11px;color:${C.mute};">สร้างจาก LOD · Reconcile Tools — Match % = จำนวน Key ที่ตรงทั้งหมด ÷ จำนวน Key ทั้งหมด · B ÷ A = ยอดรวมฝั่งหลังเทียบกับฝั่งแรก (ตามลำดับที่ระบุในแต่ละคู่)</td></tr>`;
 
   return `<table role="presentation" width="720" cellpadding="0" cellspacing="0" border="0" style="width:720px;max-width:100%;border-collapse:collapse;${FONT}background:${C.bg};">${head}${tiles}${overview}${details}${foot}</table>`;
 }

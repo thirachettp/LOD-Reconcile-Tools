@@ -34,16 +34,16 @@ function loadPairSaved(a: SystemCode, b: SystemCode, scope?: string): MappingRow
   }
 }
 
-const shortTag = (name: string, fallback: string) => {
+const shortTag = (name: string, fallback: string, max = 5) => {
   const base = name.split(" +")[0].replace(/\.[^.]+$/, "").replace(/[^0-9A-Za-zก-๙]/g, "");
-  return base.slice(0, 5) || fallback;
+  return base.slice(0, max) || fallback;
 };
 
 const isSystem = (x: unknown): x is SystemCode => typeof x === "string" && (SYSTEMS as string[]).includes(x);
 
 export function sideInfo(api: SideApi): SideInfo {
   return {
-    system: SYSTEM_LABELS[api.system],
+    system: api.sysName || SYSTEM_LABELS[api.system],
     files: api.files.map((f) =>
       f.info.isExcel && f.info.sheets.length > 1 ? `${f.info.name} [${f.selected.join(", ")}]` : f.info.name,
     ),
@@ -322,9 +322,9 @@ export function PairWorkspace({
   }, [resetSignal]);
 
   // ชื่อคอลัมน์ผลลัพธ์: ใช้รหัสระบบ (Qty_MHT / Qty_FC) ถ้าสองฝั่งต่างระบบ; ไม่งั้นใช้ชื่อไฟล์ ถ้ายังซ้ำใช้ A / B
-  const sysTag = (sys: SystemCode, name: string, fb: string) => (sys === "OTHER" ? shortTag(name, fb) : sys);
-  let tagA = sysTag(a.system, a.displayName, "A");
-  let tagB = sysTag(b.system, b.displayName, "B");
+  const sysTag = (api: SideApi, fb: string) => (api.system === "OTHER" ? (api.sysName ? shortTag(api.sysName, fb, 12) : shortTag(api.displayName, fb)) : api.system);
+  let tagA = sysTag(a, "A");
+  let tagB = sysTag(b, "B");
   if (tagA === tagB) {
     tagA = shortTag(a.displayName, "A");
     tagB = shortTag(b.displayName, "B");

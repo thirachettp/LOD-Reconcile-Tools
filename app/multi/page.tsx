@@ -6,7 +6,7 @@ import { ExecDashboard } from "@/components/ExecDashboard";
 import { UploadCard } from "@/components/UploadStep";
 import { Alert } from "@/components/ui";
 import { call, download } from "@/lib/engine-client";
-import { defaultSideName, makeItem, reportText } from "@/lib/report";
+import { defaultSideName, makeItem, reportText, sideNames } from "@/lib/report";
 import type { ExecPair } from "@/lib/email-html";
 import { useSide, type SideApi } from "@/lib/useSide";
 
@@ -57,18 +57,18 @@ export default function MultiPage() {
   const items = useMemo(
     () => results.map((p) => makeItem(status[p.id]!.meta!, titleOf(p))),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [status, titles, pairs, count, d1.files, d2.files, d3.files, d4.files, d1.system, d2.system, d3.system, d4.system],
+    [status, titles, pairs, count, d1.files, d2.files, d3.files, d4.files, d1.system, d2.system, d3.system, d4.system, d1.customName, d2.customName, d3.customName, d4.customName],
   );
   const text = reportText(items, totals);
   const sideLabel = (i: number, si?: { system: string; files: string[] }) => {
     const f = si?.files.length ? si.files : all[i].files.map((x) => x.info.name);
-    const sys = si?.system ?? all[i].system;
     const file = f.length ? `${f[0]}${f.length > 1 ? ` +${f.length - 1} ไฟล์` : ""}` : "";
-    return !sys || sys === "OTHER" || sys === "อื่น ๆ" ? file || "-" : file ? `${sys} · ${file}` : sys;
+    return file || "-";
   };
   const execPairs: ExecPair[] = results.map((p) => {
     const m = status[p.id]!.meta!;
-    return { title: titleOf(p), sideA: sideLabel(p.a, m.info?.a), sideB: sideLabel(p.b, m.info?.b), keys: m.keys, fields: m.fields.map((f) => f.name), summary: m.summary };
+    const [nameA, nameB] = sideNames(m.info);
+    return { title: titleOf(p), nameA, nameB, sideA: sideLabel(p.a, m.info?.a), sideB: sideLabel(p.b, m.info?.b), keys: m.keys, fields: m.fields.map((f) => f.name), summary: m.summary };
   });
 
   const setPair = (id: string, patch: Partial<PairCfg>) => setPairs((ps) => ps.map((p) => (p.id === id ? { ...p, ...patch } : p)));
@@ -246,8 +246,7 @@ export default function MultiPage() {
                     <th>Total</th>
                     <th>Match</th>
                     <th>Mismatch</th>
-                    <th>Missing A</th>
-                    <th>Missing B</th>
+                    <th>Missing</th>
                     <th>Match %</th>
                     <th>Status</th>
                   </tr>
@@ -271,8 +270,18 @@ export default function MultiPage() {
                         <td className="num">{s.total.toLocaleString()}</td>
                         <td className="num">{s.match.toLocaleString()}</td>
                         <td className="num">{s.mismatch.toLocaleString()}</td>
-                        <td className="num">{s.missingA.toLocaleString()}</td>
-                        <td className="num">{s.missingB.toLocaleString()}</td>
+                        <td>
+                          {(() => {
+                            const [nA, nB] = sideNames(status[p.id]!.meta!.info);
+                            return (
+                              <>
+                                {nA} <strong>{s.missingA.toLocaleString()}</strong>
+                                <br />
+                                {nB} <strong>{s.missingB.toLocaleString()}</strong>
+                              </>
+                            );
+                          })()}
+                        </td>
                         <td className="num">{s.total ? ((s.match / s.total) * 100).toFixed(2) : "0.00"} %</td>
                         <td>
                           <span className={`badge ${bad === 0 ? "ok" : "bad"}`}>{bad === 0 ? "Match" : "Not Match"}</span>
@@ -313,5 +322,5 @@ export default function MultiPage() {
 }
 
 function infoOf(s: SideApi) {
-  return { system: s.system, files: s.files.map((f) => f.info.name), rowCount: s.table?.rowCount ?? 0 };
+  return { system: s.sysName || s.system, files: s.files.map((f) => f.info.name), rowCount: s.table?.rowCount ?? 0 };
 }

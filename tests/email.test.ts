@@ -3,6 +3,8 @@ import { buildExecHtml, type ExecPair } from "../lib/email-html";
 
 const pair = (over: Partial<ExecPair["summary"]> = {}, title = "A <b> vs B"): ExecPair => ({
   title,
+  nameA: "WMS Sprint",
+  nameB: "JDA",
   sideA: "FC · a.xlsx",
   sideB: "JDA · b.csv",
   keys: ["IBC"],
@@ -27,6 +29,13 @@ describe("buildExecHtml", () => {
     const h = buildExecHtml([pair(), pair({ match: 8, mismatch: 2 })], { date: "x" });
     expect(h).toContain("Not Match");
     expect(h).toContain("90.00%");
+  });
+  it("uses selected system names instead of A/B", () => {
+    const h = buildExecHtml([pair({ missingA: 1, match: 9 })], { date: "x" });
+    expect(h).toContain("WMS Sprint รวม");
+    expect(h).toContain("Missing WMS Sprint");
+    expect(h).toContain("JDA ÷ WMS Sprint");
+    expect(h).not.toContain("Missing A");
   });
   it("handles empty and zero totals without NaN", () => {
     expect(buildExecHtml([], { date: "x" })).not.toContain("NaN");

@@ -29,3 +29,18 @@ describe("report", () => {
     expect(defaultSideName({ system: "OTHER", files: ["Initialstock.csv"], rowCount: 1 })).toBe("Initialstock");
   });
 });
+
+import { sideNames, makeItem as mk2 } from "../lib/report";
+describe("sideNames", () => {
+  const info = (a: string, b: string) => ({ a: { system: a, files: ["a.csv"], rowCount: 1 }, b: { system: b, files: ["b.csv"], rowCount: 1 } });
+  it("uses system names, falls back to A/B when equal or missing", () => {
+    expect(sideNames(info("FC", "JDA"))).toEqual(["FC", "JDA"]);
+    expect(sideNames(info("FC", "FC"))).toEqual(["A", "B"]);
+    expect(sideNames(null)).toEqual(["A", "B"]);
+    expect(sideNames(info("WMS Sprint", "อื่น ๆ"))).toEqual(["WMS Sprint", "b"]);
+  });
+  it("status text carries names", () => {
+    const base = { keys: ["k"], fields: [], summary: { total: 5, match: 3, mismatch: 0, missingA: 1, missingB: 1, duplicateKeysA: 0, duplicateKeysB: 0, rowsA: 5, rowsB: 5, keysA: 5, keysB: 5, perField: [] } };
+    expect(mk2({ ...base, info: { mappingName: null, a: { system: "FC", files: [], rowCount: 0 }, b: { system: "JDA", files: [], rowCount: 0 }, generatedAt: "", tolerance: 0, fuzzyKeys: false } }, "t").status).toContain("Missing FC 1, Missing JDA 1");
+  });
+});
