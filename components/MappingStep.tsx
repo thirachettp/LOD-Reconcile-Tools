@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { call, download } from "@/lib/engine-client";
 import type { TableMeta } from "@/lib/engine.worker";
 import type { SavedMapping } from "@/lib/library";
@@ -52,6 +52,24 @@ function previewStr(cfg: SideCfg): string {
   return cols.length ? `${cfg.function}(${cols.join(", ")})` : `${cfg.function}(…)`;
 }
 
+/** ตรวจว่า SUMIF ตั้งค่าครบหรือยัง — คืนรายการสิ่งที่ยังขาด (ว่าง = ครบ) */
+export function sumifProblems(cfg: SideCfg): string[] {
+  if (cfg.function !== "SUMIF") return [];
+  const out: string[] = [];
+  const op = cfg.operator ?? "==";
+  if (!cfg.columns[0]) out.push("ยังไม่ได้เลือกคอลัมน์ที่จะรวม (Sum)");
+  if (!cfg.criteria_column) out.push("ยังไม่ได้เลือกคอลัมน์เงื่อนไข (Criteria)");
+  if (op === "in_list" || op === "not_in_list") {
+    if (!(cfg.criteria_values ?? []).length) out.push("ยังไม่ได้ระบุค่าในกลุ่ม");
+  } else if (op !== "is_blank" && op !== "is_not_blank") {
+    if (cfg.criteria_mode === "column") {
+      if (!cfg.criteria_column2) out.push("ยังไม่ได้เลือกคอลัมน์ที่จะเปรียบเทียบ");
+    } else if (!(cfg.criteria_value ?? "").trim()) out.push("ยังไม่ได้ระบุค่าเปรียบเทียบ");
+  }
+  return out;
+}
+
+/** ตั้งค่า SUMIF เป็นกรอบเต็มใต้แถว (ไม่ซ่อนใน popover) */
 function SumifEditor({
   cfg,
   cols,
@@ -66,76 +84,57 @@ function SumifEditor({
   onChange: (c: SideCfg) => void;
 }) {
   const [vals, setVals] = useState<string[] | null | undefined>(undefined);
-  const ref = useRef<HTMLDetailsElement>(null);
   const op = cfg.operator ?? "==";
   const needsList = op === "in_list" || op === "not_in_list";
+  const noValue = op === "is_blank" || op === "is_not_blank";
+  const listId = useId();
+  const crit = cfg.criteria_column ?? null;
 
+  // ดึงค่าที่ไม่ซ้ำของคอลัมน์เงื่อนไข ไว้เป็นตัวเลือก (ไม่เกิน 200 ค่า) — ใช้ทั้ง "อยู่ในกลุ่ม" และเป็นคำแนะนำของค่าคงที่
   useEffect(() => {
-    const close = (e: MouseEvent) => {
-      if (ref.current?.open && !ref.current.contains(e.target as Node)) ref.current.open = false;
+    let off = false;
+    if (!crit || noValue || !cols.includes(crit)) {
+      setVals(undefined);
+      return;
+    }
+    call("distinct", { side, column: crit, limit: 200 })
+      .then((v) => !off && setVals(v))
+      .catch(() => !off && setVals(undefined));
+    return () => {
+      off = true;
     };
-    document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
-  }, []);
-
-  const loadVals = async (col: string | null | undefined) => {
-    if (!col) return setVals(undefined);
-    setVals(await call("distinct", { side, column: col, limit: 200 }));
-  };
+  }, [crit, side, noValue, cols]);
 
   return (
-    <details className="picker" ref={ref}>
-      <summary>
-        <span className="chip">⚙️ ตั้งค่า SUMIF</span>
-        <span className="muted">
-          {cfg.columns[0] ? colLabel(cfg.columns[0]) : "?"} ← {cfg.criteria_column ? colLabel(cfg.criteria_column) : "?"}
-        </span>
-      </summary>
-      <div className="picker-menu" style={{ width: 320, padding: 10 }}>
-        <div className="pop">
-          <label className="f">
-            รวมคอลัมน์ (Sum)
-            <ColumnPicker inline single hints={hints} options={cols} value={cfg.columns.slice(0, 1)} onChange={(v) => onChange({ ...cfg, columns: v })} />
-          </label>
-          <label className="f">
-            เงื่อนไขคอลัมน์ (Criteria)
-            <ColumnPicker
-              inline
-              single
-              hints={hints}
-              options={cols}
-              value={cfg.criteria_column ? [cfg.criteria_column] : []}
-              onChange={(v) => {
-                onChange({ ...cfg, criteria_column: v[0] });
-                if (needsList) void loadVals(v[0]);
-              }}
-            />
-          </label>
-          <label className="f">
-            Operator
-            <select
-              className="select"
-              value={op}
-              onChange={(e) => {
-                const o = e.target.value as SumifOperator;
-                onChange({ ...cfg, operator: o, criteria_mode: cfg.criteria_mode ?? "const" });
-                if (o === "in_list" || o === "not_in_list") void loadVals(cfg.criteria_column);
-              }}
-            >
-              {SUMIF_OPERATORS.map((o) => (
-                <option key={o.code} value={o.code}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          {op === "is_blank" || op === "is_not_blank" ? (
-            <span className="muted">ไม่ต้องระบุค่าเปรียบเทียบ</span>
+    <div className="sumif-panel">
+      <div className="sumif-title">⚙️ ตั้งค่า SUMIF — ฝั่ง {side.toUpperCase()}</div>
+      <div className="sumif-grid">
+        <label className="f">
+          รวมคอลัมน์ (Sum)
+          <ColumnPicker single hints={hints} options={cols} value={cfg.columns.slice(0, 1)} onChange={(v) => onChange({ ...cfg, columns: v })} />
+        </label>
+        <label className="f">
+          เงื่อนไขคอลัมน์ (Criteria)
+          <ColumnPicker single hints={hints} options={cols} value={cfg.criteria_column ? [cfg.criteria_column] : []} onChange={(v) => onChange({ ...cfg, criteria_column: v[0] ?? null })} />
+        </label>
+        <label className="f">
+          Operator
+          <select className="select" value={op} onChange={(e) => onChange({ ...cfg, operator: e.target.value as SumifOperator, criteria_mode: cfg.criteria_mode ?? "const" })}>
+            {SUMIF_OPERATORS.map((o) => (
+              <option key={o.code} value={o.code}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="f">
+          {noValue ? (
+            <span className="muted" style={{ paddingTop: 20 }}>ไม่ต้องระบุค่าเปรียบเทียบ</span>
           ) : needsList ? (
             vals ? (
               <label className="f">
                 ค่าที่อยู่ในกลุ่ม
-                <ColumnPicker inline options={vals} value={cfg.criteria_values ?? []} onChange={(v) => onChange({ ...cfg, criteria_values: v })} placeholder="พิมพ์หรือเลือกค่า…" />
+                <ColumnPicker options={vals} value={cfg.criteria_values ?? []} onChange={(v) => onChange({ ...cfg, criteria_values: v })} placeholder="พิมพ์หรือเลือกค่า…" />
               </label>
             ) : (
               <label className="f">
@@ -150,24 +149,33 @@ function SumifEditor({
             )
           ) : (
             <>
-              <div className="seg">
-                <button className={(cfg.criteria_mode ?? "const") === "const" ? "on" : ""} onClick={() => onChange({ ...cfg, criteria_mode: "const" })}>
+              <div className="seg" style={{ marginBottom: 4 }}>
+                <button type="button" className={(cfg.criteria_mode ?? "const") === "const" ? "on" : ""} onClick={() => onChange({ ...cfg, criteria_mode: "const" })}>
                   ค่าคงที่
                 </button>
-                <button className={cfg.criteria_mode === "column" ? "on" : ""} onClick={() => onChange({ ...cfg, criteria_mode: "column" })}>
+                <button type="button" className={cfg.criteria_mode === "column" ? "on" : ""} onClick={() => onChange({ ...cfg, criteria_mode: "column" })}>
                   อีกคอลัมน์
                 </button>
               </div>
               {cfg.criteria_mode === "column" ? (
-                <ColumnPicker inline single hints={hints} options={cols} value={cfg.criteria_column2 ? [cfg.criteria_column2] : []} onChange={(v) => onChange({ ...cfg, criteria_column2: v[0] })} />
+                <ColumnPicker single hints={hints} options={cols} value={cfg.criteria_column2 ? [cfg.criteria_column2] : []} onChange={(v) => onChange({ ...cfg, criteria_column2: v[0] ?? null })} />
               ) : (
-                <input className="input" placeholder="เช่น GOOD หรือ 100" value={cfg.criteria_value ?? ""} onChange={(e) => onChange({ ...cfg, criteria_value: e.target.value })} />
+                <>
+                  <input className="input" list={listId} placeholder="พิมพ์ค่า เช่น GOOD หรือ 100 (หรือเลือกจากรายการ)" value={cfg.criteria_value ?? ""} onChange={(e) => onChange({ ...cfg, criteria_value: e.target.value })} />
+                  {vals && (
+                    <datalist id={listId}>
+                      {vals.map((v) => (
+                        <option key={v} value={v} />
+                      ))}
+                    </datalist>
+                  )}
+                </>
               )}
             </>
           )}
         </div>
       </div>
-    </details>
+    </div>
   );
 }
 
@@ -199,7 +207,9 @@ function SideEditor({
       </div>
       <div>
         {cfg.function === "SUMIF" ? (
-          <SumifEditor cfg={cfg} cols={cols} side={side} hints={hints} onChange={onChange} />
+          <div className="muted" style={{ paddingTop: 8 }}>
+            ⚙️ ตั้งค่า SUMIF ในกรอบด้านล่าง ↓
+          </div>
         ) : (
           <ColumnPicker options={cols} hints={hints} value={cfg.columns} onChange={(v) => onChange({ ...cfg, columns: v })} />
         )}
@@ -443,6 +453,9 @@ export function MappingStep(props: {
 
   const targets = rows.map((r) => r.target.trim()).filter(Boolean);
   const dups = Array.from(new Set(targets.filter((t, i) => targets.indexOf(t) !== i)));
+  const incomplete = rows.flatMap((r) =>
+    (["a", "b"] as const).flatMap((side) => sumifProblems(r[side]).map((p) => `${r.target.trim() || "(ไม่มีชื่อ)"} ฝั่ง ${side.toUpperCase()}: ${p}`)),
+  );
   const patch = (id: string, fn: (r: MappingRow) => MappingRow) => props.onRows(rows.map((r) => (r.id === id ? fn(r) : r)));
 
   const previews = [
@@ -514,6 +527,16 @@ export function MappingStep(props: {
             <button className="btn small danger" title="ลบ Target Field นี้ (ทั้ง A และ B)" onClick={() => props.onRows(rows.filter((x) => x.id !== r.id))}>
               🗑
             </button>
+            {r.a.function === "SUMIF" && (
+              <div className="sumif-slot sumif-a">
+                <SumifEditor cfg={r.a} cols={colsA} side="a" hints={hintsA} onChange={(c) => patch(r.id, (x) => ({ ...x, a: c }))} />
+              </div>
+            )}
+            {r.b.function === "SUMIF" && (
+              <div className="sumif-slot sumif-b">
+                <SumifEditor cfg={r.b} cols={colsB} side="b" hints={hintsB} onChange={(c) => patch(r.id, (x) => ({ ...x, b: c }))} />
+              </div>
+            )}
           </div>
         ))}
         <div style={{ marginTop: 12 }}>
@@ -532,6 +555,16 @@ export function MappingStep(props: {
             ช่อง Source Columns: พิมพ์ชื่อเพื่อค้นหา แล้วเลือก/กด Enter · กด × เพื่อลบ · เลือกได้เฉพาะคอลัมน์ที่มีในไฟล์ · เลือกหลายคอลัมน์ใน FIRST = ใช้ค่าแรกที่ไม่ว่าง
           </span>
         </div>
+        {incomplete.length > 0 && (
+          <Alert kind="warn">
+            SUMIF ตั้งค่ายังไม่ครบ (ถ้าไม่แก้ ค่าของ Target Field นั้นจะว่างทั้งคอลัมน์):
+            <ul>
+              {incomplete.map((t) => (
+                <li key={t}>{t}</li>
+              ))}
+            </ul>
+          </Alert>
+        )}
         {dups.length > 0 && <Alert kind="warn">มี Target Field ชื่อซ้ำ: {dups.join(", ")} — กรุณาตั้งชื่อให้ไม่ซ้ำกัน</Alert>}
       </div>
 
@@ -541,7 +574,7 @@ export function MappingStep(props: {
         </button>
         <span className="spacer" />
         {props.building && <Spinner label="กำลัง Build…" />}
-        <button className="btn primary" disabled={props.building || dups.length > 0 || targets.length === 0} onClick={props.onBuild}>
+        <button className="btn primary" disabled={props.building || dups.length > 0 || targets.length === 0 || incomplete.length > 0} onClick={props.onBuild}>
           🔨 Build Standard Tables แล้วไปต่อ →
         </button>
       </div>

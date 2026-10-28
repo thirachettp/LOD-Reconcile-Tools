@@ -209,3 +209,12 @@ table.tbl { border-collapse: collapse; min-width: 100%; width: max-content; font
 .info-card .files { margin: 6px 0 0; padding: 0 0 0 18px; font-size: 13px; }
 .info-card .files li { overflow-wrap: anywhere; }
 .stepper { overflow-x: auto; }
+
+.sumif-slot { grid-row: 2; min-width: 0; }
+.sumif-a { grid-column: 2 / 5; }
+.sumif-b { grid-column: 5 / 8; }
+.sumif-panel { border: 1px dashed var(--border-strong); border-radius: 10px; padding: 10px 12px; background: var(--bg-card-alt); }
+.sumif-title { font-size: 12px; font-weight: 700; color: var(--text-secondary); margin-bottom: 8px; }
+.sumif-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; align-items: start; }
+.sumif-grid .f { font-size: 12px; font-weight: 600; color: var(--text-secondary); display: grid; gap: 3px; min-width: 0; }
+@media (max-width: 1100px) { .sumif-a, .sumif-b { grid-column: 1 / -1; grid-row: auto; } }
