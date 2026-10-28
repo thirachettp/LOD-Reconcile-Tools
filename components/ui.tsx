@@ -116,7 +116,8 @@ export function ColumnPicker({
   const disabled = options.length === 0;
 
   return (
-    <div className={`cp ${inline ? "inline" : ""}`} ref={ref}>
+    // ถ้าอยู่ใน <label> เบราว์เซอร์จะส่งคลิกต่อไปยังปุ่มแรกในนั้น (ปุ่ม × ของค่าที่เพิ่งเลือก) ทำให้ค่าที่เลือกถูกลบทันที → กันด้วย preventDefault
+    <div className={`cp ${inline ? "inline" : ""}`} ref={ref} onClick={(e) => e.preventDefault()}>
       <div
         className={`cp-box ${open ? "open" : ""}`}
         onClick={() => {
