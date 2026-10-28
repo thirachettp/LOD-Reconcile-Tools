@@ -1,5 +1,5 @@
 "use client";
-import Link from "next/link";
+import { ModeNav } from "@/components/ModeNav";
 import { useMemo, useState } from "react";
 import { PairWorkspace, type PairStatus, type PairView } from "@/components/PairWorkspace";
 import { UploadCard } from "@/components/UploadStep";
@@ -94,9 +94,7 @@ export default function MultiPage() {
           <div className="subtitle">อัปโหลดครั้งเดียว แล้วเทียบหลายคู่ เช่น A = B และ B = C — แต่ละคู่มี Mapping / Key / Compare Fields ของตัวเอง</div>
         </div>
         <div className="row">
-          <Link className="btn small" href="/">
-            ← โหมดเทียบ 2 ชุด
-          </Link>
+          <ModeNav mode="multi" />
           <span className="privacy" title="ไฟล์ถูกประมวลผลในเบราว์เซอร์ ไม่ถูกอัปโหลดไปเซิร์ฟเวอร์">
             🔒 ประมวลผลในเครื่องคุณ — ข้อมูลไม่ถูกส่งออก
           </span>

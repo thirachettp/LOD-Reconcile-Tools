@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { call, download } from "@/lib/engine-client";
 import type { CompareMeta, StatusFilter } from "@/lib/engine.worker";
 import type { Cell, RunInfo, SideInfo } from "@/lib/types";
@@ -12,29 +12,21 @@ export interface CompareSel {
   fields?: string[];
 }
 
-function SideCard({ label, side }: { label: string; side: SideInfo }) {
-  const shown = side.files.slice(0, 6);
+function sideLine(label: string, side: SideInfo) {
+  const files = side.files.length ? side.files.join(", ") : "-";
   return (
-    <div className="info-card">
-      <div className="row">
-        <span className="badge info">ฝั่ง {label}</span>
-        <strong>{side.system}</strong>
-        <span className="spacer" />
-        <span className="muted">{side.rowCount.toLocaleString()} แถวดิบ</span>
-      </div>
-      <ul className="files">
-        {shown.map((f) => (
-          <li key={f}>{f}</li>
-        ))}
-        {side.files.length > shown.length && <li className="muted">…และอีก {side.files.length - shown.length} ไฟล์</li>}
-        {side.files.length === 0 && <li className="muted">-</li>}
-      </ul>
+    <div className="ctx-side" title={`${side.system} · ${files}`}>
+      <span className="badge info">{label}</span>
+      <strong>{side.system}</strong>
+      <span className="ctx-files">{files}</span>
+      <span className="muted">{side.rowCount.toLocaleString()} แถว</span>
     </div>
   );
 }
 
 const PAGE = 100;
 const FILTERS: StatusFilter[] = ["All", "Match", "Mismatch", "Missing A", "Missing B"];
+const STICKY_KEYS = 2;
 
 function statusClass(s: string) {
   if (s === "Match") return "st-Match";
@@ -42,14 +34,25 @@ function statusClass(s: string) {
   return "st-Missing";
 }
 
-function ResultTable({ meta, pairId }: { meta: CompareMeta; pairId?: string }) {
-  const [filter, setFilter] = useState<StatusFilter>("All");
+/** ตัวกรองเริ่มต้น: ถ้ามีแถวที่ไม่ตรง ให้เปิดดูแถวนั้นก่อน (สิ่งที่คนส่วนใหญ่อยากเห็น) */
+function initialFilter(s: CompareMeta["summary"]): StatusFilter {
+  if (s.mismatch > 0) return "Mismatch";
+  if (s.missingA > 0) return "Missing A";
+  if (s.missingB > 0) return "Missing B";
+  return "All";
+}
+
+function ResultTable({ meta, pairId, actions }: { meta: CompareMeta; pairId?: string; actions?: ReactNode }) {
+  const [filter, setFilter] = useState<StatusFilter>(() => initialFilter(meta.summary));
   const [search, setSearch] = useState("");
   const [q, setQ] = useState("");
   const [sort, setSort] = useState<{ col: string; dir: "asc" | "desc" } | null>(null);
   const [page, setPage] = useState(0);
   const [data, setData] = useState<{ total: number; rows: Cell[][] }>({ total: 0, rows: [] });
   const [loading, setLoading] = useState(false);
+  const heads = useRef<(HTMLTableCellElement | null)[]>([]);
+  const [lefts, setLefts] = useState<number[]>([]);
+  const nSticky = Math.min(STICKY_KEYS, meta.keys.length);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -69,6 +72,31 @@ function ResultTable({ meta, pairId }: { meta: CompareMeta; pairId?: string }) {
       off = true;
     };
   }, [meta, filter, q, sort, page, pairId]);
+
+  // ตรึงคอลัมน์ Key ซ้ายสุดไว้ตอนเลื่อนตารางไปทางขวา (วัดความกว้างจริงของหัวคอลัมน์)
+  useLayoutEffect(() => {
+    let x = 0;
+    const next: number[] = [];
+    for (let i = 0; i < nSticky; i++) {
+      next.push(x);
+      x += heads.current[i]?.offsetWidth ?? 0;
+    }
+    setLefts((prev) => (prev.length === next.length && prev.every((v, i) => v === next[i]) ? prev : next));
+  }, [data.rows, nSticky, meta]);
+
+  // ฟิลด์ที่ไม่ตรงในแต่ละแถว → ไฮไลต์เซลล์ของฟิลด์นั้น (A / B / Diff)
+  const colsOfField = useMemo(() => {
+    const m = new Map<string, Set<number>>();
+    for (const f of meta.fields) {
+      const set = new Set<number>();
+      for (const c of [f.colA, f.colB, f.colDiff]) {
+        const i = c ? meta.columns.indexOf(c) : -1;
+        if (i >= 0) set.add(i);
+      }
+      m.set(f.name, set);
+    }
+    return m;
+  }, [meta]);
 
   const s = meta.summary;
   const counts: Record<StatusFilter, number> = { All: s.total, Match: s.match, Mismatch: s.mismatch, "Missing A": s.missingA, "Missing B": s.missingB };
@@ -96,16 +124,27 @@ function ResultTable({ meta, pairId }: { meta: CompareMeta; pairId?: string }) {
         <span className="muted">
           แสดง {data.total.toLocaleString()} จาก {s.total.toLocaleString()} แถว
         </span>
+        {actions}
       </div>
 
-      <div className="tbl-wrap">
+      <div className="tbl-wrap tall">
         <table className="tbl">
           <thead>
             <tr>
-              {meta.columns.map((c) => {
+              {meta.columns.map((c, j) => {
                 const sortable = c.endsWith("_Diff") || meta.keys.includes(c);
+                const sticky = j < nSticky;
                 return (
-                  <th key={c} className={sortable ? "sortable" : ""} onClick={sortable ? () => clickSort(c) : undefined} title={c.endsWith("_Diff") ? "คลิกเพื่อเรียงตามความต่างสูงสุด" : undefined}>
+                  <th
+                    key={c}
+                    ref={(el) => {
+                      heads.current[j] = el;
+                    }}
+                    className={`${sortable ? "sortable" : ""} ${sticky ? "sk" : ""}`}
+                    style={sticky ? { left: lefts[j] ?? 0 } : undefined}
+                    onClick={sortable ? () => clickSort(c) : undefined}
+                    title={c.endsWith("_Diff") ? "คลิกเพื่อเรียงตามความต่างสูงสุด" : undefined}
+                  >
                     {c}
                     {sort?.col === c ? (sort.dir === "desc" ? " ▼" : " ▲") : ""}
                   </th>
@@ -114,25 +153,34 @@ function ResultTable({ meta, pairId }: { meta: CompareMeta; pairId?: string }) {
             </tr>
           </thead>
           <tbody>
-            {data.rows.map((r, i) => (
-              <tr key={i}>
-                {r.map((v, j) => {
-                  const col = meta.columns[j] ?? "";
-                  let cls = typeof v === "number" ? "num" : "";
-                  if (j === meta.statusCol) cls = statusClass(String(v));
-                  else if (col.endsWith("_Diff") && typeof v === "number") cls += v > 0 ? " d-pos" : v < 0 ? " d-neg" : " d-zero";
-                  return (
-                    <td key={j} className={cls}>
-                      {fmtCell(v)}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
+            {data.rows.map((r, i) => {
+              const status = String(r[meta.statusCol] ?? "");
+              const badCols = new Set<number>();
+              if (status === "Mismatch") {
+                for (const n of String(r[meta.mismatchedCol] ?? "").split(", ")) colsOfField.get(n)?.forEach((ix) => badCols.add(ix));
+              }
+              return (
+                <tr key={i} className={status === "Mismatch" ? "row-mis" : status.startsWith("Missing") ? "row-miss" : ""}>
+                  {r.map((v, j) => {
+                    const col = meta.columns[j] ?? "";
+                    let cls = typeof v === "number" ? "num" : "";
+                    if (j === meta.statusCol) cls = statusClass(String(v));
+                    else if (col.endsWith("_Diff") && typeof v === "number") cls += v > 0 ? " d-pos" : v < 0 ? " d-neg" : " d-zero";
+                    if (badCols.has(j)) cls += " cell-bad";
+                    if (j < nSticky) cls += " sk";
+                    return (
+                      <td key={j} className={cls} style={j < nSticky ? { left: lefts[j] ?? 0 } : undefined}>
+                        {fmtCell(v)}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
             {data.rows.length === 0 && !loading && (
               <tr>
                 <td colSpan={meta.columns.length} className="muted" style={{ textAlign: "center", padding: 24 }}>
-                  ไม่มีข้อมูล
+                  ไม่มีข้อมูลในตัวกรองนี้
                 </td>
               </tr>
             )}
@@ -244,11 +292,29 @@ export function CompareStep(props: {
   const autoTitle = `${defaultSideName(m?.info?.a ?? props.runInfo.a)} vs ${defaultSideName(m?.info?.b ?? props.runInfo.b)}`;
   const shownTitle = repTitleTouched ? repTitle : autoTitle;
   const pct = m && m.summary.total ? (m.summary.match / m.summary.total) * 100 : 0;
+  const bad = m ? m.summary.mismatch + m.summary.missingA + m.summary.missingB : 0;
+
+  // รันเสร็จแล้วเลื่อนไปที่ผลลัพธ์ให้เอง (ไม่ต้องเลื่อนหา)
+  const resultsRef = useRef<HTMLDivElement>(null);
+  const justRan = useRef(false);
+  useEffect(() => {
+    if (m && justRan.current) {
+      justRan.current = false;
+      resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [m]);
+
+  const exportXlsx = async () => {
+    const buf = await call("exportXlsx", { pairId: props.pairId });
+    const d = new Date();
+    const stamp = `${String(d.getDate()).padStart(2, "0")}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getFullYear()).slice(2)}_${String(d.getHours()).padStart(2, "0")}${String(d.getMinutes()).padStart(2, "0")}`;
+    download(buf, `CompareStock_${stamp}.xlsx`, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  };
 
   return (
     <div>
       <div className="sec-title">Compare & Dashboard</div>
-      <div className="sec-sub">เลือก Key ที่ใช้จับคู่แถว และฟิลด์ที่ต้องการเทียบ</div>
+      <div className="sec-sub">เลือก Key ที่ใช้จับคู่แถว และฟิลด์ที่ต้องการเทียบ แล้วกด Run Compare</div>
 
       <div className="card">
         <div className="grid2">
@@ -265,7 +331,7 @@ export function CompareStep(props: {
         <div className="row">
           <label className="row" style={{ gap: 6 }} title="ตัดช่องว่างหัวท้ายและไม่สนตัวพิมพ์เล็ก/ใหญ่ตอนจับคู่ Key และเทียบฟิลด์ข้อความ (ปกติเทียบตรงตามตัวอักษร)">
             <input type="checkbox" checked={fuzzy} onChange={(e) => setFuzzy(e.target.checked)} />
-            จับคู่แบบหลวม (ตัดช่องว่าง / ไม่สนตัวพิมพ์ — ใช้กับ Key และฟิลด์ข้อความ)
+            จับคู่แบบหลวม (ตัดช่องว่าง / ไม่สนตัวพิมพ์)
           </label>
           <label className="row" style={{ gap: 6 }} title="ผลต่างตัวเลขไม่เกินค่านี้ถือว่าตรงกัน">
             ยอมให้ต่างได้ไม่เกิน
@@ -275,7 +341,14 @@ export function CompareStep(props: {
           <button className="btn" onClick={props.onBack}>
             ← กลับ
           </button>
-          <button className="btn primary" disabled={running || keys.length === 0 || fields.length === 0} onClick={run}>
+          <button
+            className="btn primary"
+            disabled={running || keys.length === 0 || fields.length === 0}
+            onClick={() => {
+              justRan.current = true;
+              void run();
+            }}
+          >
             {running ? "กำลัง Compare…" : "⚡ Run Compare"}
           </button>
         </div>
@@ -283,17 +356,20 @@ export function CompareStep(props: {
       </div>
 
       {m && (
-        <>
-          <div className="card-label">🗂️ ข้อมูลที่ใช้เทียบ</div>
-          <div className="grid2" style={{ marginBottom: 12 }}>
-            <SideCard label="A" side={m.info?.a ?? props.runInfo.a} />
-            <SideCard label="B" side={m.info?.b ?? props.runInfo.b} />
+        <div ref={resultsRef} style={{ scrollMarginTop: 12 }}>
+          <div className="card ctx">
+            <div className="ctx-pair">
+              {sideLine("A", m.info?.a ?? props.runInfo.a)}
+              <span className="ctx-vs">↔</span>
+              {sideLine("B", m.info?.b ?? props.runInfo.b)}
+            </div>
+            <div className="muted" style={{ marginTop: 6 }}>
+              Mapping: <strong>{m.info?.mappingName ?? "-"}</strong> · Key: {m.keys.join(", ")} · เทียบ: {m.fields.map((f) => f.name).join(", ") || "-"}
+              {m.info && m.info.tolerance > 0 ? ` · ยอมให้ต่างได้ ≤ ${m.info.tolerance}` : ""}
+              {m.info?.fuzzyKeys ? " · จับคู่แบบหลวม" : ""}
+            </div>
           </div>
-          <div className="muted" style={{ marginBottom: 12 }}>
-            Mapping: <strong>{m.info?.mappingName ?? "-"}</strong> · Key: {m.keys.join(", ")} · เทียบ: {m.fields.map((f) => f.name).join(", ") || "-"}
-            {m.info && m.info.tolerance > 0 ? ` · ยอมให้ต่างได้ ≤ ${m.info.tolerance}` : ""}
-            {m.info?.fuzzyKeys ? " · จับคู่แบบหลวม" : ""}
-          </div>
+
           {m.notes.length > 0 && (
             <Alert kind="warn">
               <ul>
@@ -303,94 +379,90 @@ export function CompareStep(props: {
               </ul>
             </Alert>
           )}
-          <div className="kpis">
-            <div className="kpi">
-              <div className="kpi-v">{m.summary.total.toLocaleString()}</div>
-              <div className="kpi-l">Total Rows</div>
+
+          <div className="card dash">
+            <div className="kpis compact">
+              <div className="kpi">
+                <div className="kpi-v">{m.summary.total.toLocaleString()}</div>
+                <div className="kpi-l">Total Rows</div>
+              </div>
+              <div className="kpi match">
+                <div className="kpi-v">{m.summary.match.toLocaleString()}</div>
+                <div className="kpi-l">Match ({pct.toFixed(1)}%)</div>
+              </div>
+              <div className="kpi mis">
+                <div className="kpi-v">{m.summary.mismatch.toLocaleString()}</div>
+                <div className="kpi-l">Mismatch</div>
+              </div>
+              <div className="kpi miss">
+                <div className="kpi-v">{m.summary.missingA.toLocaleString()}</div>
+                <div className="kpi-l">Missing A</div>
+              </div>
+              <div className="kpi miss">
+                <div className="kpi-v">{m.summary.missingB.toLocaleString()}</div>
+                <div className="kpi-l">Missing B</div>
+              </div>
             </div>
-            <div className="kpi match">
-              <div className="kpi-v">{m.summary.match.toLocaleString()}</div>
-              <div className="kpi-l">Match ({pct.toFixed(1)}%)</div>
-            </div>
-            <div className="kpi mis">
-              <div className="kpi-v">{m.summary.mismatch.toLocaleString()}</div>
-              <div className="kpi-l">Mismatch</div>
-            </div>
-            <div className="kpi miss">
-              <div className="kpi-v">{m.summary.missingA.toLocaleString()}</div>
-              <div className="kpi-l">Missing A</div>
-            </div>
-            <div className="kpi miss">
-              <div className="kpi-v">{m.summary.missingB.toLocaleString()}</div>
-              <div className="kpi-l">Missing B</div>
-            </div>
-          </div>
-          <div style={{ marginBottom: 16 }}>
-            <div className="row muted" style={{ justifyContent: "space-between", flexWrap: "nowrap" }}>
-              <span>Match Rate</span>
-              <span>{pct.toFixed(1)}%</span>
-            </div>
-            <div className="bar">
+            <div className="bar" title={`Match Rate ${pct.toFixed(1)}%`}>
               <div style={{ width: `${pct}%` }} />
             </div>
-          </div>
-
-          {m.summary.perField.length > 0 && (
-            <>
-              <div className="card-label">📐 Total Diff ต่อ Field</div>
-              <div className="kpis">
+            {m.summary.perField.length > 0 && (
+              <div className="fchips">
+                <span className="muted">ผลต่างต่อฟิลด์:</span>
                 {m.summary.perField.map((f) => (
-                  <div className="kpi" key={f.name}>
-                    <div className="kpi-v" style={{ fontSize: 22 }}>
-                      {f.kind === "text"
-                        ? f.rowsDiff.toLocaleString()
-                        : f.totalAbsDiff.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                      {f.kind === "date" ? " วัน" : f.kind === "text" ? " แถว" : ""}
-                    </div>
-                    <div className="kpi-l">
-                      {f.name}
-                      {f.kind === "text" ? " (ข้อความ)" : ` · ${f.rowsDiff.toLocaleString()} แถวต่าง`}
-                    </div>
-                  </div>
+                  <span className={`badge ${f.rowsDiff === 0 ? "ok" : "warn"}`} key={f.name} title={f.kind === "text" ? "ฟิลด์ข้อความ — นับจำนวนแถวที่ต่าง" : "ผลรวมของความต่าง (ค่าสัมบูรณ์)"}>
+                    {f.name}:{" "}
+                    {f.kind === "text"
+                      ? `${f.rowsDiff.toLocaleString()} แถวต่าง`
+                      : `Σ|diff| ${f.totalAbsDiff.toLocaleString(undefined, { maximumFractionDigits: 2 })}${f.kind === "date" ? " วัน" : ""} · ${f.rowsDiff.toLocaleString()} แถวต่าง`}
+                  </span>
                 ))}
               </div>
-            </>
-          )}
+            )}
+          </div>
 
           {!props.hideReport && (
-          <ReportCard
-            title={shownTitle}
-            onTitle={(t) => {
-              setRepTitle(t);
-              setRepTitleTouched(true);
-            }}
-            items={props.report}
-            canAdd={shownTitle.trim().length > 0}
-            onAdd={() => {
-              props.onReport([...props.report, makeItem(m, shownTitle.trim())]);
-              setRepTitleTouched(false);
-            }}
-            onRemove={(id) => props.onReport(props.report.filter((x) => x.id !== id))}
-            onClear={() => props.onReport([])}
-          />
+            <details className="card fold" open={props.report.length > 0}>
+              <summary>
+                📝 สรุปผลสำหรับรายงาน (คัดลอกไปส่งได้)
+                {props.report.length > 0 && <span className="badge info">{props.report.length} หัวข้อ</span>}
+              </summary>
+              <ReportCard
+                bare
+                title={shownTitle}
+                onTitle={(t) => {
+                  setRepTitle(t);
+                  setRepTitleTouched(true);
+                }}
+                items={props.report}
+                canAdd={shownTitle.trim().length > 0}
+                onAdd={() => {
+                  props.onReport([...props.report, makeItem(m, shownTitle.trim())]);
+                  setRepTitleTouched(false);
+                }}
+                onRemove={(id) => props.onReport(props.report.filter((x) => x.id !== id))}
+                onClear={() => props.onReport([])}
+              />
+            </details>
           )}
 
           <div className="card">
-            <ResultTable pairId={props.pairId} key={`${m.info?.generatedAt ?? ""}|${m.columns.join("|")}`} meta={m} />
-            <hr className="s" />
-            <button
-              className="btn primary"
-              onClick={async () => {
-                const buf = await call("exportXlsx", { pairId: props.pairId });
-                const d = new Date();
-                const stamp = `${String(d.getDate()).padStart(2, "0")}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getFullYear()).slice(2)}_${String(d.getHours()).padStart(2, "0")}${String(d.getMinutes()).padStart(2, "0")}`;
-                download(buf, `CompareStock_${stamp}.xlsx`, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-              }}
-            >
-              📥 Export Excel (6 sheets)
-            </button>
+            <div className="row" style={{ marginBottom: 12 }}>
+              <strong style={{ fontSize: 15 }}>ผลการเทียบ</strong>
+              <span className={`badge ${bad === 0 ? "ok" : "warn"}`}>{bad === 0 ? "ตรงทุกแถว" : `ไม่ตรง ${bad.toLocaleString()} แถว`}</span>
+            </div>
+            <ResultTable
+              pairId={props.pairId}
+              key={`${m.info?.generatedAt ?? ""}|${m.columns.join("|")}`}
+              meta={m}
+              actions={
+                <button className="btn small primary" onClick={exportXlsx}>
+                  📥 Export Excel
+                </button>
+              }
+            />
           </div>
-        </>
+        </div>
       )}
     </div>
   );

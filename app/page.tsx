@@ -1,5 +1,5 @@
 "use client";
-import Link from "next/link";
+import { ModeNav } from "@/components/ModeNav";
 import { useState } from "react";
 import { PairWorkspace, type PairStatus } from "@/components/PairWorkspace";
 import { UploadStep } from "@/components/UploadStep";
@@ -41,9 +41,7 @@ export default function Page() {
           <div className="subtitle">เทียบข้อมูลสต็อกระหว่างระบบ FC · JDA · MHT</div>
         </div>
         <div className="row">
-          <Link className="btn small" href="/multi" title="เทียบหลายชุดข้อมูลพร้อมกัน เช่น A=B และ B=C">
-            🔀 เทียบหลายชุด (3 ชุด / หลายคู่)
-          </Link>
+          <ModeNav mode="single" />
           <span className="privacy" title="ไฟล์ถูกประมวลผลในเบราว์เซอร์ ไม่ถูกอัปโหลดไปเซิร์ฟเวอร์">
             🔒 ประมวลผลในเครื่องคุณ — ข้อมูลไม่ถูกส่งออก
           </span>

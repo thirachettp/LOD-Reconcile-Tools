@@ -216,10 +216,7 @@ function SideEditor({
         ) : (
           <ColumnPicker options={cols} hints={hints} value={cfg.columns} onChange={(v) => onChange({ ...cfg, columns: v })} />
         )}
-      </div>
-      <div className={`fpv ${missing.length ? "miss" : ""}`} title={missing.length ? `ไม่พบคอลัมน์: ${missing.map(colLabel).join(", ")}` : FUNCTION_HINTS[cfg.function]}>
-        {previewStr(cfg)}
-        {missing.length > 0 && <div style={{ fontSize: 11 }}>⚠ ไม่พบ: {missing.map(colLabel).join(", ")}</div>}
+        {missing.length > 0 && <div className="miss-note">⚠ ไม่พบในไฟล์: {missing.map(colLabel).join(", ")}</div>}
       </div>
     </>
   );
@@ -283,7 +280,7 @@ function TeamBar({ lib }: { lib: LibraryApi }) {
   if (t.state === "off") {
     return (
       <div className="muted" style={{ marginTop: 8 }} title={t.message}>
-        👥 คลังของทีมยังไม่เปิดใช้ — ผู้ดูแลต้องตั้งค่าที่เก็บข้อมูลและรหัสผ่านบน Vercel (ดู README) · ระหว่างนี้บันทึกได้เฉพาะในเบราว์เซอร์นี้
+        👥 คลังของทีมยังไม่เปิดใช้ (ผู้ดูแลต้องตั้งค่าบน Vercel — ดู README) · ตอนนี้บันทึกได้เฉพาะในเครื่องนี้
       </div>
     );
   }
@@ -394,7 +391,7 @@ function LibraryCard({ lib, sysA, sysB, preset, touched, onImport, onExport }: {
 
   return (
     <div className="card">
-      <div className="card-label">💾 Template / Mapping ที่บันทึกไว้</div>
+      <div className="card-label">💾 Template / Mapping</div>
       <div className="lib-row">
         <select className="select" value={cur?.id ?? ""} onChange={(e) => {
             clearUi();
@@ -537,8 +534,8 @@ function LibraryCard({ lib, sysA, sysB, preset, touched, onImport, onExport }: {
         {curTeamItem && <span className="muted">แก้ไขล่าสุด {fmtWhen(curTeamItem.updatedAt)}{curTeamItem.updatedBy ? ` โดย ${curTeamItem.updatedBy}` : ""}</span>}
       </div>
       {!cur && preset.note && <div className="muted" style={{ marginTop: 6 }}>ℹ️ {preset.note}</div>}
-      <div className="muted" style={{ marginTop: 6 }}>
-        เก็บเฉพาะสูตร + Key/Compare Fields (ไม่เก็บข้อมูลในไฟล์) · “ทีม” = เก็บบนเซิร์ฟเวอร์ ทุกคนที่มีรหัสผ่านเห็นชุดเดียวกัน · “เครื่องนี้” = อยู่ในเบราว์เซอร์นี้เท่านั้น
+      <div className="muted" style={{ marginTop: 6 }} title="Template เก็บเฉพาะสูตร + Key/Compare Fields ไม่เก็บข้อมูลในไฟล์ · ทีม = เก็บบนเซิร์ฟเวอร์ ทุกคนที่มีรหัสผ่านเห็นชุดเดียวกัน · เครื่องนี้ = อยู่ในเบราว์เซอร์นี้เท่านั้น">
+        ℹ️ เก็บเฉพาะสูตร + Key/Compare Fields (ไม่เก็บข้อมูลในไฟล์)
       </div>
     </div>
   );
@@ -608,29 +605,29 @@ export function MappingStep(props: {
         </Alert>
       )}
 
-      <div className="card">
-        <div className="card-label">👁️ ตัวอย่างข้อมูลดิบ (8 แถวแรก) — ดูประกอบการเลือกคอลัมน์</div>
+      <details className="card fold">
+        <summary>👁️ ดูตัวอย่างข้อมูลดิบ (8 แถวแรกของแต่ละฝั่ง) — ช่วยเลือกคอลัมน์</summary>
         <div className="grid2">
           {previews.map((p) => (
-            <details key={p.side} open>
-              <summary style={{ cursor: "pointer", fontWeight: 600, marginBottom: 8 }}>
+            <div key={p.side}>
+              <div style={{ fontWeight: 600, marginBottom: 8 }}>
                 {p.side} · {SYSTEM_LABELS[p.sys]} · {p.name}
                 {p.t ? <span className="muted"> — {p.t.rowCount.toLocaleString()} แถว × {p.t.columns.length} คอลัมน์</span> : null}
-              </summary>
+              </div>
               {p.t ? <PreviewTable columns={p.t.columns.map(colLabel)} rows={p.t.preview} max={8} /> : <span className="muted">ยังไม่มีข้อมูล</span>}
-            </details>
+            </div>
           ))}
         </div>
-      </div>
+      </details>
 
       <div className="card">
         <div className="map-head">
           <div />
-          <div className="map-group" style={{ gridColumn: "span 3" }} title={props.nameA}>
-            {props.nameA} — {props.sysA}
+          <div className="map-group" style={{ gridColumn: "span 2" }} title={props.nameA}>
+            A · {props.nameA} — {props.sysA}
           </div>
-          <div className="map-group" style={{ gridColumn: "span 3" }} title={props.nameB}>
-            {props.nameB} — {props.sysB}
+          <div className="map-group" style={{ gridColumn: "span 2" }} title={props.nameB}>
+            B · {props.nameB} — {props.sysB}
           </div>
           <div />
         </div>
@@ -638,10 +635,8 @@ export function MappingStep(props: {
           <div>Target Field</div>
           <div>Fn</div>
           <div>Source Columns</div>
-          <div>Preview</div>
           <div>Fn</div>
           <div>Source Columns</div>
-          <div>Preview</div>
           <div />
         </div>
         {rows.map((r) => (
@@ -693,11 +688,13 @@ export function MappingStep(props: {
         {dups.length > 0 && <Alert kind="warn">มี Target Field ชื่อซ้ำ: {dups.join(", ")} — กรุณาตั้งชื่อให้ไม่ซ้ำกัน</Alert>}
       </div>
 
-      <div className="row">
+      <div className="action-bar">
         <button className="btn" onClick={props.onBack}>
           ← กลับ
         </button>
         <span className="spacer" />
+        {incomplete.length > 0 && <span className="badge warn">SUMIF ตั้งค่ายังไม่ครบ {incomplete.length} จุด</span>}
+        {cov.length > 0 && <span className="badge warn">ไม่พบคอลัมน์ {cov.reduce((n, c) => n + c.missing.length, 0)} รายการ</span>}
         {props.building && <Spinner label="กำลัง Build…" />}
         <button className="btn primary" disabled={props.building || dups.length > 0 || targets.length === 0 || incomplete.length > 0} onClick={props.onBuild}>
           🔨 Build Standard Tables แล้วไปต่อ →

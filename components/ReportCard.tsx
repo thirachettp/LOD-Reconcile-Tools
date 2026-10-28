@@ -10,6 +10,7 @@ export function ReportCard({
   onRemove,
   onClear,
   canAdd,
+  bare,
 }: {
   title: string;
   onTitle: (t: string) => void;
@@ -18,6 +19,8 @@ export function ReportCard({
   onRemove: (id: string) => void;
   onClear: () => void;
   canAdd: boolean;
+  /** ไม่ห่อด้วยการ์ด/หัวข้อ (ใช้ภายใน details) */
+  bare?: boolean;
 }) {
   const [totals, setTotals] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -34,8 +37,8 @@ export function ReportCard({
   };
 
   return (
-    <div className="card">
-      <div className="card-label">📝 สรุปผลสำหรับรายงาน (คัดลอกไปส่งได้)</div>
+    <div className={bare ? "" : "card"} style={bare ? { paddingTop: 12 } : undefined}>
+      {!bare && <div className="card-label">📝 สรุปผลสำหรับรายงาน (คัดลอกไปส่งได้)</div>}
       <div className="row" style={{ marginBottom: 10 }}>
         <input className="input" style={{ flex: 1, minWidth: 220 }} value={title} onChange={(e) => onTitle(e.target.value)} aria-label="ชื่อหัวข้อ" placeholder="ชื่อหัวข้อ เช่น WMS Sprint vs InitialStock" />
         <button className="btn primary" disabled={!canAdd} onClick={onAdd}>
